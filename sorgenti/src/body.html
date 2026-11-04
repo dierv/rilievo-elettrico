@@ -1,0 +1,62 @@
+<div id="home">
+  <div class="row" style="align-items:flex-end">
+    <div style="flex:3">
+      <h1>Rilievo elettrico</h1>
+      <div class="mut">Planimetria + foto → bozza dell'impianto esistente</div>
+    </div>
+    <div style="flex:none" class="row">
+      <button id="hLib">Simboli</button>
+      <button id="hSet">Impostazioni</button>
+      <button id="hNew" class="pri">+ Nuovo sopralluogo</button>
+    </div>
+  </div>
+  <div id="hBanner"></div>
+  <div id="hList" class="hgrid"></div>
+</div>
+
+<div id="sv" class="hide">
+  <div id="topbar">
+    <button id="bBack" class="ghost" title="Sopralluoghi">&#8592;</button>
+    <div class="ttl" id="svTitle"></div>
+    <select id="planSel"></select>
+    <button id="bAddPlan" class="sm">+ Tavola</button>
+    <div class="sp"></div>
+    <span id="syncB" class="chip grey">…</span>
+    <button id="bUndo" class="sm" title="Annulla">&#8630; Annulla</button>
+    <button id="bComputo" class="sm pri">Computo / Esporta</button>
+    <button id="bMenu" class="sm">&#8942;</button>
+  </div>
+  <div id="main">
+    <div id="tools"></div>
+    <div id="cwrap">
+      <canvas id="cv"></canvas>
+      <div id="hint" class="hide"></div>
+      <div id="aiQ"></div>
+      <div id="zoomBtns">
+        <button id="zIn">+</button><button id="zOut">&minus;</button><button id="zFit" style="font-size:13px">Tutto</button>
+      </div>
+      <div id="palette" class="hide"></div>
+    </div>
+    <div id="panel"></div>
+  </div>
+</div>
+
+<div id="modal" class="hide"><div class="box"></div></div>
+<div id="viewer" class="hide">
+  <div class="vt">
+    <button id="vClose">&#10005; Chiudi</button>
+    <button id="vPrev">&#8249;</button><button id="vNext">&#8250;</button>
+    <span id="vTitle" style="flex:1;font-size:14px"></span>
+    <button id="vBoxes">Riquadri</button>
+  </div>
+  <div id="vstage"><div id="vinner"><img id="vimg" alt=""><svg id="vsvg" viewBox="0 0 1 1" preserveAspectRatio="none"></svg></div></div>
+  <div id="vside"></div>
+</div>
+<div id="toast" class="hide"></div>
+<input type="file" id="fPlan" accept=".pdf,.dxf,.dwg,image/*" class="hide">
+<input type="file" id="fCam" accept="image/*" capture="environment" class="hide">
+<input type="file" id="fGal" accept="image/*" multiple class="hide">
+<input type="file" id="fAudRec" accept="audio/*" capture class="hide">
+<input type="file" id="fAudPick" accept="audio/*,.m4a,.mp3,.aac,.amr,.3gp,.3gpp,.ogg,.opus,.wav,.webm,.flac" class="hide">
+<input type="file" id="fJson" accept=".json,.zip,application/json,application/zip" class="hide">
+<input type="file" id="fSymImg" accept="image/png,image/svg+xml,image/jpeg" class="hide">
