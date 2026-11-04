@@ -55,14 +55,21 @@ async function apiCall(prompt, opts, json) {
   if (!r.ok) {
     let msg = ''; try { const j = await r.json(); msg = (j.error && j.error.message) || ''; } catch (e) { }
     console.warn('API', r.status, msg);
-    const code = r.status === 401 || r.status === 403 ? 'bad_key' : /credit balance|billing/i.test(msg) ? 'credit' : r.status === 429 ? 'rate_limited' : r.status === 529 || r.status >= 500 ? 'overloaded' : r.status === 413 ? 'prompt_too_large' : 'api_' + r.status;
-    if (code === 'bad_key' || code === 'credit') { CAP.aiOff = true; AIQ.stop(); toast(AI_ERR[code], true, 8000); }
+    const code = apiErrCode(r.status, msg);
+    if (['bad_key', 'credit', 'key_scope', 'cors_org'].includes(code)) { CAP.aiOff = true; AIQ.stop(); toast(AI_ERR[code], true, 9000); }
     throw { code, message: msg };
   }
   const j = await r.json(); const out = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
   await addSurveyCost(sid, usageCost(model, j.usage));
   if (opts.onText) { try { opts.onText({ text: out }); } catch (e) { } }
   return json ? parseLooseJson(out) : { text: out };
+}
+function apiErrCode(status, msg) {
+  if (/not scoped to a workspace/i.test(msg)) return 'key_scope'; // chiave di tutta l'organizzazione: serve una chiave legata a un workspace
+  if (/CORS requests are not allowed/i.test(msg)) return 'cors_org';
+  if (status === 401 || status === 403) return 'bad_key';
+  if (/credit balance|billing/i.test(msg) || status === 402) return 'credit';
+  return status === 429 ? 'rate_limited' : status === 529 || status >= 500 ? 'overloaded' : status === 413 ? 'prompt_too_large' : 'api_' + status;
 }
 const ApiSample = Object.assign((prompt, opts) => apiCall(prompt, opts || {}, false), {
   json: (prompt, opts) => apiCall(prompt, opts || {}, true),
@@ -72,6 +79,8 @@ Object.assign(AI_ERR, {
   no_key: 'Manca la chiave API: inseriscila in Impostazioni.', bad_key: 'Chiave API non valida: controllala in Impostazioni.',
   credit: 'Credito API esaurito: ricaricalo su console.anthropic.com.', overloaded: 'Servizio AI sovraccarico: riprova tra poco.',
   network: 'Connessione all\'AI non riuscita: riprova.', offline: 'Sei offline: la foto verrà analizzata al ritorno della rete.',
+  key_scope: 'Questa chiave vale per tutta l\'organizzazione: creane una legata al workspace "Default" (platform.claude.com → API keys) e incollala in Impostazioni.',
+  cors_org: 'La tua organizzazione Anthropic non permette chiamate dal browser: usa una chiave di un account senza questa restrizione.',
 });
 
 /* ---- download: nella cartella dell'archivio se c'è, altrimenti nei Download ---- */
@@ -239,7 +248,8 @@ function pwaSettingsWire(b) {
     e.target.disabled = true; e.target.textContent = 'Provo…';
     try {
       const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: API_MODELS.quick, max_tokens: 5, messages: [{ role: 'user', content: 'Rispondi solo: OK' }] }) });
-      if (r.ok) { const j = await r.json(); await addSurveyCost(null, usageCost(API_MODELS.quick, j.usage)); toast('Chiave valida ✓'); } else { let m = ''; try { m = (await r.json()).error.message; } catch (x) { } toast(r.status === 401 ? 'Chiave non valida' : /credit/i.test(m) ? 'Chiave valida ma senza credito' : 'Errore ' + r.status + ': ' + m, true, 6000); }
+      if (r.ok) { const j = await r.json(); await addSurveyCost(null, usageCost(API_MODELS.quick, j.usage)); toast('Chiave valida ✓'); }
+      else { let m = ''; try { m = (await r.json()).error.message; } catch (x) { } const c = apiErrCode(r.status, m); toast(c === 'bad_key' ? 'Chiave non valida' : c === 'credit' ? 'Chiave valida ma senza credito' : AI_ERR[c] || 'Errore ' + r.status + ': ' + m, true, 9000); }
     } catch (x) { toast('Nessuna connessione', true); }
     e.target.disabled = false; e.target.textContent = 'Prova';
   };

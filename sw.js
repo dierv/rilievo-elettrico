@@ -1,5 +1,5 @@
 // Service worker: l'app funziona anche senza rete. Ogni versione ha la sua cache; la nuova sostituisce la vecchia.
-const V = 'rilievo-20261104-174740';
+const V = 'rilievo-20261104-181123';
 const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable.png', 'lib/pdf.min.js', 'lib/pdf.worker.min.js', 'lib/jszip.min.js', 'lib/dxf-parser.js'];
 self.addEventListener('install', e => e.waitUntil(caches.open(V).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('rilievo-') && k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())));
