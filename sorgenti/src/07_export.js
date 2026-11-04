@@ -48,7 +48,7 @@ function openComputo() {
   };
   b.querySelector('#xJson').onclick = async () => { const data = JSON.stringify({ app: 'rilievo-elettrico', v: 1, survey: S.sv, rooms: S.rooms, items: S.items, draws: S.draws, vnotes: S.vnotes, photos: S.photos.map(cleanPhoto), lib: S.lib }, null, 1); await saveFile(`backup_${safeName(sv.name)}.json`, new Blob([data], { type: 'application/json' })); };
   b.querySelector('#xRel').onclick = () => relazioneAI(b.querySelector('#xRelBox'));
-  b.querySelector('#xFull').onclick = async e => { const bt = e.target; bt.disabled = true; try { const { blob, miss } = await fullBackupZip(m => bt.textContent = m); await saveFile(`backup_${safeName(sv.name)}_${new Date().toISOString().slice(0, 10)}.zip`, blob); if (miss) toast(`${miss} file non disponibili: non sono nel backup`, true, 6000); } catch (err) { console.error(err); toast('Backup non riuscito: ' + (err.message || err), true, 6000); } bt.disabled = false; bt.textContent = 'Backup completo (foto e audio)'; };
+  b.querySelector('#xFull').onclick = async e => { const bt = e.target; bt.disabled = true; try { const { blob, miss } = await fullBackupZip(m => bt.textContent = m); if (await saveFile(`backup_${safeName(sv.name)}_${new Date().toISOString().slice(0, 10)}.zip`, blob)) { sv.lastBackup = Date.now(); Sync.mark('meta'); } if (miss) toast(`${miss} file non disponibili: non sono nel backup`, true, 6000); } catch (err) { console.error(err); toast('Backup non riuscito: ' + (err.message || err), true, 6000); } bt.disabled = false; bt.textContent = 'Backup completo (foto e audio)'; };
 }
 
 /* ---- backup completo: dati + piante + foto + audio in un solo ZIP ---- */

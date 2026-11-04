@@ -88,10 +88,28 @@ const LocalDL = {
   async save({ filename, data }) {
     const blob = data instanceof Blob ? data : new Blob([data]);
     if (Archive.ready()) { try { const p = await Archive.writeExport(filename, blob); toast('Salvato in ' + p, false, 5000); return { status: 'archived' }; } catch (e) { console.warn(e); } }
-    const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000);
-    return { status: 'saved' };
+    if (!Archive.ok() && navigator.canShare) { // iPhone/iPad: niente cartelle, si salva con Condividi → «Salva su File»
+      const file = new File([blob], filename, { type: blob.type || mimeOfName(filename) });
+      let can = false; try { can = navigator.canShare({ files: [file] }); } catch (e) { }
+      if (can) return shareSheet(file);
+    }
+    dlLink(blob, filename); return { status: 'saved' };
   },
 };
+function dlLink(blob, filename) { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); }
+const mimeOfName = n => ({ zip: 'application/zip', json: 'application/json', csv: 'text/csv', png: 'image/png', jpg: 'image/jpeg', m4a: 'audio/mp4', mp4: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', webm: 'audio/webm', mp3: 'audio/mpeg', txt: 'text/plain' })[(n.split('.').pop() || '').toLowerCase()] || 'application/octet-stream';
+function shareSheet(file) { // il foglio di condivisione si apre solo da un tocco: prima mostro il file pronto
+  return new Promise((res, rej) => {
+    const kb = file.size > 1048576 ? (file.size / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(file.size / 1024)) + ' KB';
+    const b = openModal(`<h3>File pronto</h3><div><b>${esc(file.name)}</b> <span class="mut small">${kb}</span></div>
+      <div class="mut small" style="margin-top:6px">Tocca <b>Condividi</b> e scegli <b>«Salva su File»</b> (iCloud Drive o «Sul mio iPhone/iPad»), oppure mandalo per mail o a un'altra app.</div>
+      <div class="acts"><button id="shNo">Chiudi</button><button id="shDl">Scarica</button><button class="pri" id="shGo">Condividi</button></div>`);
+    b.querySelector('#shGo').onclick = async () => { try { await navigator.share({ files: [file], title: file.name }); closeModal(); res({ status: 'shared' }); } catch (e) { if (e && e.name === 'AbortError') return; closeModal(); dlLink(file, file.name); res({ status: 'saved' }); } };
+    b.querySelector('#shDl').onclick = () => { closeModal(); dlLink(file, file.name); res({ status: 'saved' }); };
+    b.querySelector('#shNo').onclick = () => { closeModal(); rej({ code: 'declined' }); };
+  });
+}
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 window.claude = { use: async n => n === 'sample' ? (KV.get('apiKey') ? ApiSample : null) : n === 'downloads' ? LocalDL : null };
 
 /* ---- archivio su una cartella del tablet ---- */
@@ -226,8 +244,8 @@ let installEvt = null; const hadCtl = !!(navigator.serviceWorker && navigator.se
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 function pwaHomeBanners() {
   const b = [];
-  if (!isInstalled()) b.push(`<div class="banner">📲 Per usarla anche offline installala sul tablet: ${installEvt ? '<button class="sm pri" id="pwInst">Installa app</button>' : 'menu ⋮ di Chrome → <b>Installa app</b> (o "Aggiungi a schermata Home")'}.</div>`);
-  if (!Archive.ok()) b.push(`<div class="banner warn">Questo browser non permette di scegliere una cartella: per avere i file usa "Backup completo" nel Computo.</div>`);
+  if (!isInstalled()) b.push(`<div class="banner">📲 Per usarla anche offline installala: ${installEvt ? '<button class="sm pri" id="pwInst">Installa app</button>' : isIOS() ? 'in Safari tocca <b>Condividi</b> → <b>«Aggiungi alla schermata Home»</b>' : 'menu ⋮ di Chrome → <b>Installa app</b> (o "Aggiungi a schermata Home")'}.</div>`);
+  if (!Archive.ok()) b.push(`<div class="banner warn">📁 ${isIOS() ? 'Su iPhone e iPad il browser non permette di salvare in una cartella' : 'Questo browser non permette di salvare in una cartella'}: i dati restano nell'app, anche offline. Per avere i file: <b>Computo → Backup completo</b> → <b>Condividi</b> → «Salva su File». Per riprenderli: «Importa backup».${isIOS() ? ' <b>Attenzione:</b> se togli l\'icona dalla Home, iOS cancella anche i dati dell\'app: fai prima il backup.' : ''}</div>`);
   else if (!Archive.root) b.push(`<div class="banner warn">📁 Scegli la cartella dove salvare dati, piante, foto e audio: una cartella <b>sul tablet</b> (es. Documenti/Rilievi), non su Drive. <button class="sm pri" id="pwPick">Scegli cartella</button></div>`);
   else if (!Archive.ready()) b.push(`<div class="banner warn">📁 Cartella "${esc(Archive.root.name)}" da riattivare: si riattiva aprendo un sopralluogo (tocca "Consenti"), oppure <button class="sm pri" id="pwRegrant">Riattiva ora</button>. Nel frattempo i dati restano nell'app.</div>`);
   else b.push(`<div class="banner">📁 Archivio: cartella "<b>${esc(Archive.root.name)}</b>" ✓ <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`);

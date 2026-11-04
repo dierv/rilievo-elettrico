@@ -20,6 +20,13 @@ Indirizzo: **https://dierv.github.io/rilievo-elettrico/**
 
 In questo repository c'è solo l'app: nessun dato dei rilievi.
 
+## iPhone e iPad
+- Su iOS si installa da Safari: **Condividi → «Aggiungi alla schermata Home»**.
+- Il browser di iOS non permette di salvare in una cartella: i dati restano nell'app, anche offline.
+- Per avere i file: **Computo → Backup completo → Condividi → «Salva su File»** (iCloud Drive o «Sul mio iPhone»). Per riprenderli: **Importa backup**.
+- Attenzione: se togli l'icona dalla Home, iOS cancella anche i dati dell'app. Fai prima il backup.
+- Sulla scheda di ogni sopralluogo c'è la data dell'ultimo backup.
+
 ## Riconoscimento AI
 - Funziona con una chiave API Anthropic, da inserire in **Impostazioni**. Resta solo sul tablet.
 - Costi indicativi con Sonnet 5.5: circa 2 centesimi di dollaro a foto e circa 10 per la lettura di un quadro.
