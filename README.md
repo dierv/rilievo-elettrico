@@ -27,6 +27,13 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 - Attenzione: se togli l'icona dalla Home, iOS cancella anche i dati dell'app. Fai prima il backup.
 - Sulla scheda di ogni sopralluogo c'è la data dell'ultimo backup.
 
+## Penna (Apple Pencil, S Pen…)
+- Appena l'app vede la penna: la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo appoggiato non lascia segni. Con due dita si fa lo zoom.
+- Con la penna non compare la lente: il punto è sotto la punta.
+- Il disegno a mano segue la pressione, anche nel DXF e nel PNG.
+- Se tablet e penna lo supportano, avvicinando la penna allo schermo compare il mirino dove cadrà il punto.
+- Si disattiva in **Impostazioni**.
+
 ## Riconoscimento AI
 - Funziona con una chiave API Anthropic, da inserire in **Impostazioni**. Resta solo sul tablet.
 - Costi indicativi con Sonnet 5.5: circa 2 centesimi di dollaro a foto e circa 10 per la lettura di un quadro.

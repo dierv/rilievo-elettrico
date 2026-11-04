@@ -28,7 +28,7 @@ function renderPanel() {
   if (S.tool === 'room') {
     const n = (S.tmp.poly || []).length; const re = S.redrawRoom ? roomById(S.redrawRoom) : null;
     el.innerHTML = `<h2>${re ? 'Ridisegna: ' + esc(re.name) : 'Nuova stanza'}</h2>
-      <ol class="small" style="padding-left:18px;margin:4px 0 10px;line-height:1.5"><li>Tocca gli angoli della stanza uno dopo l'altro. Tieni il dito appoggiato: compare la lente con il mirino, il punto si fissa quando sollevi il dito.</li>
+      <ol class="small" style="padding-left:18px;margin:4px 0 10px;line-height:1.5"><li>${penMode() ? 'Tocca gli angoli della stanza con la penna, uno dopo l\'altro. Avvicinando la penna allo schermo vedi il mirino dove cadrà il punto (se il tablet lo supporta).' : 'Tocca gli angoli della stanza uno dopo l\'altro. Tieni il dito appoggiato: compare la lente con il mirino, il punto si fissa quando sollevi il dito.'}</li>
       <li>I lati quasi orizzontali o verticali si raddrizzano da soli; vicino agli angoli delle altre stanze il punto si aggancia (mirino rosso).</li>
       <li>Per chiudere tocca il primo punto (verde) o "Chiudi stanza".</li></ol>
       <div class="mut">Angoli inseriti: <b>${n}</b></div>
@@ -420,6 +420,7 @@ async function openSettings() {
     <div class="mut small">Campo visivo: lato lungo della foto. Taratura: fotografa in orizzontale una parete da 2 m di distanza e misura quanti metri entrano nella foto (L): FOV = 2·atan(L/4).</div>
     <label class="f">Disegno</label>
     <div class="row"><label class="row small" style="flex:none"><input type="checkbox" id="tOrtho" style="width:auto;min-height:0" ${st.ortho !== false ? 'checked' : ''}> Raddrizza i lati delle stanze (orizzontali/verticali)</label><div style="flex:.5"><label class="f">Dimensione simboli (px)</label><input id="tSym" type="number" value="${st.symPx}"></div></div>
+    <label class="row small"><input type="checkbox" id="tPen" style="width:auto;min-height:0" ${st.penOnly !== false ? 'checked' : ''}> Con la penna (Apple Pencil, S Pen…): la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo non lascia segni</label>
     <div id="tStore" class="mut small" style="margin-top:10px"></div>
     <div class="acts"><button onclick="closeModal()">Annulla</button><button class="pri" id="tOk">Salva</button></div>`);
   b.querySelector('#tTier').value = st.tier;
@@ -427,9 +428,9 @@ async function openSettings() {
     st.tier = b.querySelector('#tTier').value; st.auto = b.querySelector('#tAuto').checked;
     st.fov = clamp(num(b.querySelector('#tFov').value, 66), 30, 120); st.camH = clamp(num(b.querySelector('#tCam').value, 1.4), 0.3, 3);
     st.roomH = clamp(num(b.querySelector('#tH').value, 2.7), 2, 30); st.ortho = b.querySelector('#tOrtho').checked;
-    st.symPx = clamp(num(b.querySelector('#tSym').value, 22), 12, 48);
+    st.symPx = clamp(num(b.querySelector('#tSym').value, 22), 12, 48); st.penOnly = b.querySelector('#tPen').checked;
     if (PLATFORM === 'pwa') pwaSettingsSave(b);
-    Sync.mark('lib'); closeModal(); redraw();
+    Sync.mark('lib'); closeModal(); updateHint(); redraw();
   };
   if (PLATFORM === 'pwa') pwaSettingsWire(b);
   const sEl = b.querySelector('#tStore');

@@ -59,7 +59,7 @@ label.f{display:block;font-size:12.5px;color:var(--mut);margin:10px 0 4px;font-w
 .tbtn svg{width:24px;height:24px}
 .tbtn.on{background:var(--acc2);color:var(--acc);border-color:#c5d4fa;font-weight:700}
 #cwrap{flex:1;position:relative;min-width:0;background:#e3e6ea;overflow:hidden;touch-action:none}
-#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #hint{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(21,24,29,.86);color:#fff;padding:8px 14px;border-radius:99px;font-size:13.5px;pointer-events:none;max-width:92%;text-align:center}
 #zoomBtns{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
 #zoomBtns button{width:44px;height:44px;padding:0;font-size:20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}

@@ -182,7 +182,8 @@ function buildDxf(P, pnum) {
   const wU = P.dxf ? P.dxf.s : ppm(P); // px pianta per unità del disegno
   for (const d of S.draws.filter(d => d.planId === P.id)) for (const st of d.strokes) {
     g(0, 'POLYLINE'); g(8, 'RIL_DISEGNO'); g(62, aciOf(st.col)); g(66, 1); g(70, 0); g(10, 0); g(20, 0); g(30, 0); const w = +(st.w / wU).toFixed(4); if (w > 0) { g(40, w); g(41, w); }
-    for (const p of st.pts) { const [x, y] = T(p[0], p[1]); g(0, 'VERTEX'); g(8, 'RIL_DISEGNO'); g(10, x); g(20, y); g(30, 0); }
+    const pw = st.pts.some(p => p.length > 2); // tratto a pressione: ogni vertice ha il suo spessore iniziale e finale
+    st.pts.forEach((p, i) => { const [x, y] = T(p[0], p[1]); g(0, 'VERTEX'); g(8, 'RIL_DISEGNO'); g(10, x); g(20, y); g(30, 0); if (pw && w > 0) { const q = st.pts[i + 1] || p; g(40, +(w * prW(p[2] ?? 0.5)).toFixed(4)); g(41, +(w * prW(q[2] ?? 0.5)).toFixed(4)); } });
     g(0, 'SEQEND'); g(8, 'RIL_DISEGNO');
   }
   for (const it of all.filter(i => i.hint)) { const [x, y] = T(it.x, it.y); circ('RIL_INDIZI', x, y, 0.15 * U); text('RIL_INDIZI', x + 0.2 * U, y - 0.05 * U, 0.1 * U, '! ' + (it.note || 'indizio').slice(0, 90)); }
@@ -229,7 +230,7 @@ async function annotatedPng(P, pnum) {
     x.beginPath(); r.poly.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.fillStyle = 'rgba(59,130,246,.06)'; x.fill(); x.strokeStyle = 'rgba(59,130,246,.6)'; x.lineWidth = Math.max(1.5, R / 6); x.stroke();
     const [cx, cy] = polyCentroid(r.poly); x.font = `600 ${fs}px sans-serif`; x.textAlign = 'center'; x.lineWidth = fs / 3; x.strokeStyle = '#fff'; x.strokeText(r.name, cx, cy + fs * 1.6); x.fillStyle = '#1e3a8a'; x.fillText(r.name, cx, cy + fs * 1.6);
   }
-  for (const d of S.draws.filter(d => d.planId === P.id)) for (const st of d.strokes) { x.beginPath(); st.pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = st.col; x.lineWidth = Math.max(1, st.w); x.stroke(); }
+  for (const d of S.draws.filter(d => d.planId === P.id)) for (const st of d.strokes) strokePath(x, st.pts, p => p, Math.max(1, st.w), st.col);
   for (const it of its) if (it.pts) { const s = symOf(it.s); x.beginPath(); it.pts.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.strokeStyle = symColor(s); x.lineWidth = R / 2.5; x.setLineDash(it.ok ? [] : [R, R / 2]); x.stroke(); x.setLineDash([]); }
   const pp = its.filter(i => !i.pts).map(it => ({ id: it.id, x: it.x, y: it.y, it })); const dp = declutter(pp, R);
   for (const p of pp) { const [dx, dy] = dp.get(p.id); if (Math.hypot(dx - p.x, dy - p.y) < 1) continue; x.beginPath(); x.moveTo(p.x, p.y); x.lineTo(dx, dy); x.strokeStyle = 'rgba(30,41,59,.6)'; x.lineWidth = Math.max(1, R / 10); x.stroke(); x.beginPath(); x.arc(p.x, p.y, R / 6, 0, 7); x.fillStyle = '#1e293b'; x.fill(); }

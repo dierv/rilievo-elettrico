@@ -196,7 +196,8 @@ function draw() {
   if (T.cal && T.cal.length) { const live = hv && S.tool === 'cal' ? T.cal.concat([[hv.x, hv.y]]) : T.cal; pl(live, '#dc2626', false); T.cal.forEach(p => dot(p, '#dc2626')); }
   if (T.cam) { const [sx, sy] = toS(T.cam.x, T.cam.y); if (T.cam.pt) { x.beginPath(); x.arc(sx, sy, 22, 0, 7); x.fillStyle = 'rgba(29,78,216,.15)'; x.fill(); x.setLineDash([4, 3]); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); x.setLineDash([]); } else { const half = Math.atan(Math.tan(ST().fov * Math.PI / 360) * 0.75); x.beginPath(); x.moveTo(sx, sy); x.arc(sx, sy, Math.max(10, T.cam.len * v.s), T.cam.a - half, T.cam.a + half); x.closePath(); x.fillStyle = 'rgba(29,78,216,.18)'; x.fill(); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); } dot([T.cam.x, T.cam.y], '#1d4ed8'); }
   if (hv && hv.guides) hv.guides.forEach(([a, b]) => { const [ax, ay] = toS(a[0], a[1]), [bx, by] = toS(b[0], b[1]); x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.strokeStyle = 'rgba(220,38,38,.7)'; x.lineWidth = 1.2; x.setLineDash([4, 4]); x.stroke(); x.setLineDash([]); });
-  if (hv) { dot([hv.x, hv.y], hv.mag ? '#dc2626' : '#0f172a', hv.mag ? 7 : 5); }
+  if (hv && hv.pen) { const [a, b] = toS(hv.x, hv.y); x.beginPath(); [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([u, w]) => { x.moveTo(a + u * 5, b + w * 5); x.lineTo(a + u * 16, b + w * 16); }); x.strokeStyle = 'rgba(255,255,255,.9)'; x.lineWidth = 4; x.stroke(); x.strokeStyle = hv.mag ? '#dc2626' : '#0f172a'; x.lineWidth = 1.6; x.stroke(); } // mirino della penna sospesa (con bordo bianco per vederlo sopra la pianta)
+  if (hv) { dot([hv.x, hv.y], hv.mag ? '#dc2626' : '#0f172a', hv.pen ? (hv.mag ? 5 : 3) : hv.mag ? 7 : 5); }
   // barra di scala
   if (P.ppm) {
     let m = 1; const opts = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]; for (const o of opts) { if (o * mpx > 70) { m = o; break; } m = o; }
@@ -224,16 +225,54 @@ function simplifyPts(P, tol) { // Douglas-Peucker
   while (st.length) { const [a, b] = st.pop(); let best = -1, bi = -1; for (let i = a + 1; i < b; i++) { const d = segDist(P[i], P[a], P[b]); if (d > best) { best = d; bi = i; } } if (best > tol) { keep[bi] = 1; st.push([a, bi], [bi, b]); } }
   return P.filter((_, i) => keep[i]);
 }
+function simplifyStroke(P, tol, ptol = 0.08) { // come simplifyPts, ma con la pressione tiene anche i punti dove lo spessore cambia
+  if (P.length < 3 || P[0].length < 3) return simplifyPts(P, tol);
+  const keep = new Uint8Array(P.length); keep[0] = keep[P.length - 1] = 1; const st = [[0, P.length - 1]];
+  while (st.length) {
+    const [a, b] = st.pop(); const A = P[a], B = P[b]; const dx = B[0] - A[0], dy = B[1] - A[1], l2 = dx * dx + dy * dy; let best = -1, bi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const t = l2 ? clamp(((P[i][0] - A[0]) * dx + (P[i][1] - A[1]) * dy) / l2, 0, 1) : (i - a) / (b - a);
+      const d = Math.max(segDist(P[i], A, B) / tol, Math.abs(P[i][2] - (A[2] + t * (B[2] - A[2]))) / ptol);
+      if (d > best) { best = d; bi = i; }
+    }
+    if (best > 1) { keep[bi] = 1; st.push([a, bi], [bi, b]); }
+  }
+  return P.filter((_, i) => keep[i]);
+}
+const prW = p => p == null ? 1 : 0.35 + 1.3 * p; // spessore relativo secondo la pressione (0,5 = normale)
+function strokePath(x, pts, tr, w, col) { // tratto: unico se a spessore costante, a pezzi se c'è la pressione
+  x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = col;
+  if (!pts.some(p => p.length > 2)) { x.beginPath(); pts.forEach((p, i) => { const [a, b] = tr(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.lineWidth = w; x.stroke(); return; }
+  if (pts.length === 1) { const [a, b] = tr(pts[0]); x.beginPath(); x.arc(a, b, w * prW(pts[0][2]) / 2, 0, 7); x.fillStyle = col; x.fill(); return; }
+  for (let i = 1; i < pts.length; i++) { const [a, b] = tr(pts[i - 1]), [c, d] = tr(pts[i]); x.beginPath(); x.moveTo(a, b); x.lineTo(c, d); x.lineWidth = Math.max(0.6, w * prW(((pts[i - 1][2] ?? 0.5) + (pts[i][2] ?? 0.5)) / 2)); x.stroke(); }
+}
 function drawStroke(x, st, sel) {
-  x.beginPath(); st.pts.forEach((p, i) => { const [a, b] = toS(p[0], p[1]); i ? x.lineTo(a, b) : x.moveTo(a, b); });
-  x.lineCap = 'round'; x.lineJoin = 'round'; const w = Math.max(0.8, st.w * S.view.s);
-  if (sel) { x.strokeStyle = 'rgba(29,78,216,.3)'; x.lineWidth = w + 10; x.stroke(); }
-  x.strokeStyle = st.col; x.lineWidth = w; x.stroke();
+  const w = Math.max(0.8, st.w * S.view.s); const tr = p => toS(p[0], p[1]);
+  if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
+  strokePath(x, st.pts, tr, w, st.col);
+}
+function penHover(sx, sy) { // penna sospesa sopra lo schermo: mirino dove cadrà il punto
+  const P = curPlan(); if (!P || !['room', 'sym', 'cal', 'vnote'].includes(S.tool)) return;
+  if (PEN.hoverRq) return; PEN.hoverRq = requestAnimationFrame(() => {
+    PEN.hoverRq = 0; if (ptrs.size) return; const [bx, by] = toB(sx, sy); const f = toolSnap(); S.hover = f ? f(bx, by) : { x: bx, y: by }; S.hover.pen = true; S.loupe = null; redraw();
+  });
+}
+function penHoverEnd() { if (PEN.hoverRq) { cancelAnimationFrame(PEN.hoverRq); PEN.hoverRq = 0; } if (S.hover && S.hover.pen) { S.hover = null; redraw(); } }
+function fingerGesture(x0, y0) { // penna in uso: il dito sposta la pianta; nella selezione un tocco seleziona ma non trascina oggetti
+  if (S.tool !== 'sel') return panGesture(x0, y0);
+  const h = hitTest(x0, y0);
+  return panGesture(x0, y0, () => { if (h && ['item', 'photo', 'vnote', 'draw', 'room'].includes(h.t)) select(h.t, h.o.id); else if (!h) select(null); });
+}
+function toolSnap() { // come si aggancia il punto per lo strumento attivo (uguale col dito, con la penna e col mirino sospeso)
+  const P = curPlan();
+  if (S.tool === 'room') { const poly = S.tmp.poly || []; return (bx, by) => snapRoomPoint(bx, by, { prev: poly[poly.length - 1], first: poly.length >= 3 ? poly[0] : null }); }
+  if (S.tool === 'sym') { const sym = symOf(S.symSel); return (bx, by) => { if (sym.mount === 'parete' || sym.mount === 'lineare') { const w = snapToRoomWall(P.id, bx, by, sym.mount === 'lineare' ? 0.4 : 0.6); if (w) return { x: w.x, y: w.y, mag: 'wall' }; } return { x: bx, y: by }; }; }
+  return null;
 }
 function finishStroke(st) {
   const P = curPlan(); if (!P) return; pushUndo();
-  let pts = st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05, st.pts[0][1]]] : simplifyPts(st.pts, 0.6 / S.view.s);
-  pts = pts.map(p => [r1(p[0]), r1(p[1])]);
+  let pts = st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05, ...st.pts[0].slice(1)]] : simplifyStroke(st.pts, 0.6 / S.view.s);
+  pts = pts.map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]);
   let d = S.penDraw && drawById(S.penDraw);
   if (!d) { d = { id: uid('d'), planId: P.id, strokes: [] }; S.draws.push(d); S.penDraw = d.id; }
   d.strokes.push({ pts, col: st.col, w: +st.w.toFixed(3) }); Sync.mark('plan:' + P.id); renderPalette(); redraw();
@@ -289,6 +328,10 @@ const HINTS = {
   cal: 'Tocca due punti di cui conosci la distanza (es. le estremità di una quota)',
   vnote: 'Tocca il punto della nota (tieni il dito per la lente), poi registra',
 };
+const PEN_HINTS = { // quando si usa la penna
+  sel: 'Penna: tocca e trascina simboli, foto e stanze • dito: sposta la pianta (un tocco seleziona) • due dita per lo zoom',
+  pen: 'Disegna con la penna: più premi, più il tratto è spesso • il dito sposta la pianta • "Fine" per tornare alla freccia',
+};
 function renderTools() {
   $('#tools').innerHTML = TOOLS.map(([t, n]) => `<button class="tbtn${S.tool === t ? ' on' : ''}" data-t="${t}"><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${n}</button>`).join('');
   $('#tools').querySelectorAll('[data-t]').forEach(b => b.onclick = () => setTool(b.dataset.t));
@@ -303,7 +346,7 @@ function setTool(t) {
 }
 function updateHint() {
   let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine';
-  const h = $('#hint'); h.textContent = HINTS[k] || ''; h.classList.toggle('hide', !curPlan());
+  const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || ''; h.classList.toggle('hide', !curPlan());
   clearTimeout(updateHint.t); updateHint.t = setTimeout(() => { if (S.tool === 'sel') h.classList.add('hide'); }, 5000);
 }
 
@@ -332,6 +375,9 @@ function snapRoomPoint(bx, by, o = {}) { // o: prev, next (vertici adiacenti), f
 
 /* ============ INTERAZIONE ============ */
 const ptrs = new Map(); let gest = null;
+// penna: appena l'app la vede, la penna disegna e posiziona, il dito sposta soltanto la pianta (e il palmo non lascia segni)
+const PEN = { seen: false, hoverRq: 0 }; let curPtr = { pen: false, p: 0.5 };
+const penMode = () => PEN.seen && ST().penOnly !== false;
 function hitTest(sx, sy) {
   const P = curPlan(); if (!P) return null; const R = ST().symPx / 2 + 8;
   const ed = editingRoom();
@@ -380,15 +426,23 @@ function initCanvas() {
   new ResizeObserver(() => redraw()).observe(c);
   const pos = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   c.addEventListener('pointerdown', e => {
-    c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ptrs.set(e.pointerId, { x, y });
+    const isPen = e.pointerType === 'pen';
+    if (isPen && !PEN.seen) { PEN.seen = true; if (ST().penOnly !== false) { toast('Penna rilevata: la penna disegna e posiziona, le dita spostano la pianta (si cambia in Impostazioni)', false, 6000); updateHint(); renderPanel(); } }
+    const pm = penMode();
+    if (pm && !isPen && [...ptrs.values()].some(p => p.pen)) return; // palmo appoggiato mentre si scrive: ignorato
+    if (pm && isPen && ptrs.size) { if (gest && gest.cancel) gest.cancel(); gest = null; ptrs.clear(); } // la penna ha la precedenza sulle dita
+    if (isPen) penHoverEnd();
+    c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ptrs.set(e.pointerId, { x, y, pen: isPen });
+    if (ptrs.size === 1) curPtr = { pen: isPen, p: isPen && e.pressure ? e.pressure : 0.5 };
     if (ptrs.size === 2) {
       if (gest && gest.cancel) gest.cancel();
       const [p1, p2] = [...ptrs.values()];
       gest = { t: 'pinch', d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), m0: [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2], v0: { ...S.view } };
-    } else if (ptrs.size === 1) gest = startGesture(x, y);
+    } else if (ptrs.size === 1) gest = pm && !isPen ? fingerGesture(x, y) : startGesture(x, y);
   });
   c.addEventListener('pointermove', e => {
-    if (!ptrs.has(e.pointerId)) return; const [x, y] = pos(e); ptrs.set(e.pointerId, { x, y });
+    if (!ptrs.has(e.pointerId)) { if (e.pointerType === 'pen' && !e.buttons && !ptrs.size) { const [hx, hy] = pos(e); penHover(hx, hy); } return; }
+    const [x, y] = pos(e); const pp = ptrs.get(e.pointerId); ptrs.set(e.pointerId, { x, y, pen: pp.pen }); if (pp.pen && e.pressure) curPtr.p = e.pressure;
     if (gest && gest.t === 'pinch' && ptrs.size >= 2) {
       const [p1, p2] = [...ptrs.values()]; const d = Math.hypot(p1.x - p2.x, p1.y - p2.y); const m = [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2];
       const v0 = gest.v0; const ns = clamp(v0.s * d / Math.max(1, gest.d0), ZMIN, ZMAX); const k = ns / v0.s;
@@ -401,6 +455,7 @@ function initCanvas() {
     if (gest && gest.up && ptrs.size === 0) { const g = gest; gest = null; g.up(x, y, e.type === 'pointercancel'); }
   };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  c.addEventListener('pointerleave', e => { if (e.pointerType === 'pen' && !ptrs.size) penHoverEnd(); });
   c.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = pos(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
   $('#zIn').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1.5);
   $('#zOut').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1 / 1.5);
@@ -414,7 +469,7 @@ function panGesture(x0, y0, onTap) {
   };
 }
 function pointGesture(x0, y0, snap, onDone) { // punto preciso: lente sopra il dito, il punto si fissa quando sollevi il dito
-  const upd = (x, y) => { const [bx, by] = toB(x, y); S.hover = snap ? snap(bx, by) : { x: bx, y: by }; S.loupe = { sx: x, sy: y }; redraw(); };
+  const upd = (x, y) => { const [bx, by] = toB(x, y); S.hover = snap ? snap(bx, by) : { x: bx, y: by }; S.loupe = curPtr.pen ? null : { sx: x, sy: y }; redraw(); }; // con la penna la punta non copre il punto: niente lente
   upd(x0, y0);
   return {
     move(x, y) { upd(x, y); },
@@ -438,7 +493,7 @@ function startGesture(x0, y0) {
     if (h && h.t === 'draw') {
       const o = h.o; select('draw', o.id); let moved = false; const [bx0, by0] = toB(x0, y0); const orig = JSON.parse(JSON.stringify(o.strokes));
       return {
-        move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; if (!moved) pushUndo(); moved = true; const [bx, by] = toB(x, y); const dx = bx - bx0, dy = by - by0; o.strokes = orig.map(st => ({ ...st, pts: st.pts.map(p => [r1(p[0] + dx), r1(p[1] + dy)]) })); redraw(); },
+        move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; if (!moved) pushUndo(); moved = true; const [bx, by] = toB(x, y); const dx = bx - bx0, dy = by - by0; o.strokes = orig.map(st => ({ ...st, pts: st.pts.map(p => [r1(p[0] + dx), r1(p[1] + dy), ...p.slice(2)]) })); redraw(); },
         up() { if (moved) Sync.mark('plan:' + o.planId); renderPanel(); redraw(); },
       };
     }
@@ -475,18 +530,14 @@ function startGesture(x0, y0) {
   }
   if (tool === 'room') {
     const poly = S.tmp.poly || (S.tmp.poly = []);
-    return pointGesture(x0, y0, (bx, by) => snapRoomPoint(bx, by, { prev: poly[poly.length - 1], first: poly.length >= 3 ? poly[0] : null }), p => {
+    return pointGesture(x0, y0, toolSnap(), p => {
       if (p.closing) { finishRoom(); return; }
       const last = poly[poly.length - 1]; if (last && Math.hypot(p.x - last[0], p.y - last[1]) * S.view.s < 4) return;
       poly.push([r1(p.x), r1(p.y)]); renderPanel(); redraw();
     });
   }
   if (tool === 'sym') {
-    const sym = symOf(S.symSel);
-    return pointGesture(x0, y0, (bx, by) => {
-      if (sym.mount === 'parete' || sym.mount === 'lineare') { const w = snapToRoomWall(P.id, bx, by, sym.mount === 'lineare' ? 0.4 : 0.6); if (w) return { x: w.x, y: w.y, mag: 'wall' }; }
-      return { x: bx, y: by };
-    }, p => symPlace(p.x, p.y));
+    return pointGesture(x0, y0, toolSnap(), p => symPlace(p.x, p.y));
   }
   if (tool === 'cal') return pointGesture(x0, y0, null, p => calTap(p.x, p.y));
   if (tool === 'vnote') return pointGesture(x0, y0, null, p => vnPlace(p.x, p.y));
@@ -508,10 +559,11 @@ function startGesture(x0, y0) {
     };
   }
   if (tool === 'pen') {
-    const [bx, by] = toB(x0, y0); const st = { pts: [[bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
+    const [bx, by] = toB(x0, y0); const prs = () => +clamp(curPtr.p, 0.05, 1).toFixed(2); // con la penna il tratto segue la pressione
+    const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
     S.tmp.stroke = st; redraw();
     return {
-      move(x, y) { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > 1.5) { st.pts.push([b2x, b2y]); redraw(); } },
+      move(x, y) { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > 1.5) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } },
       up(x, y, cancel) { S.tmp.stroke = null; if (cancel) { redraw(); return; } finishStroke(st); },
       cancel() { S.tmp.stroke = null; redraw(); },
     };
@@ -526,7 +578,7 @@ function vertexGesture(h, x0, y0) {
   if (h.t === 'mid') { const p = r.poly[i], q = r.poly[(i + 1) % r.poly.length]; r.poly.splice(i + 1, 0, [r1((p[0] + q[0]) / 2), r1((p[1] + q[1]) / 2)]); i = i + 1; }
   const n = () => r.poly.length;
   const snap = (bx, by) => snapRoomPoint(bx, by, { prev: r.poly[(i - 1 + n()) % n()], next: r.poly[(i + 1) % n()], skip: { room: r, i } });
-  const upd = (x, y) => { const [bx, by] = toB(x, y); const p = snap(bx, by); r.poly[i] = [r1(p.x), r1(p.y)]; S.hover = p; S.loupe = { sx: x, sy: y }; redraw(); };
+  const upd = (x, y) => { const [bx, by] = toB(x, y); const p = snap(bx, by); r.poly[i] = [r1(p.x), r1(p.y)]; S.hover = p; S.loupe = curPtr.pen ? null : { sx: x, sy: y }; redraw(); };
   upd(x0, y0);
   return {
     move(x, y) { upd(x, y); },
