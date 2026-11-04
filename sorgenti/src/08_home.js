@@ -44,7 +44,7 @@ function renderHome() {
     <div class="mut small">${esc([s.client, s.address].filter(Boolean).join(' • ') || '—')}</div>
     <div class="row wrap" style="gap:5px">${s.kind ? `<span class="chip grey">${esc(s.kind)}</span>` : ''}<span class="chip grey">${st.plans || (s.plans || []).length} tavole</span><span class="chip grey">${st.done || 0}/${st.rooms || 0} locali</span><span class="chip grey">${st.items || 0} elementi</span><span class="chip grey">${st.photos || 0} foto</span>${s.cost && s.cost.calls ? `<span class="chip ai">✦ AI ${fmtUsd(s.cost.usd)}</span>` : ''}</div>
     <div class="mut small">Aggiornato ${fmtDate(s.updated || s.created)}</div></div>`; }).join('') + `<div class="card" style="display:flex;align-items:center;justify-content:center"><button id="hImp">Importa backup (ZIP o JSON)</button></div>`;
-  L.querySelectorAll('.scard').forEach(c => c.onclick = e => { if (e.target.closest('[data-del]')) return; openSurvey(c.dataset.id); });
+  L.querySelectorAll('.scard').forEach(c => c.onclick = e => { if (e.target.closest('[data-del]')) return; if (PLATFORM === 'pwa' && Archive.root && !Archive.ready()) Archive.regrant(true); openSurvey(c.dataset.id); });
   L.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteSurvey(b.dataset.del));
   $('#hImp').onclick = () => $('#fJson').click();
 }

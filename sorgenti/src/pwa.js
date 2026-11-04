@@ -130,11 +130,16 @@ const Archive = {
     toast('Archivio nella cartella "' + h.name + '": salvo i sopralluoghi…', false, 5000); await this.syncAll(); return true;
   },
   async saveHandle(h) { try { await IDB.put('docs', { path: '__archivio', handle: h }); } catch (e) { console.warn('cartella non memorizzata', e); } },
-  async regrant() {
-    if (!this.root) return this.pick();
-    try { this.perm = await this.root.requestPermission({ mode: 'readwrite' }); } catch (e) { this.perm = 'denied'; }
-    if (this.perm === 'granted') this.kick(true); else toast('Accesso alla cartella non concesso', true);
+  async regrant(quiet) { // Chrome su Android toglie il permesso quando l'app si chiude: va richiesto con un tocco
+    if (!this.root) return quiet ? false : this.pick();
+    try { this.perm = await this.root.requestPermission({ mode: 'readwrite' }); } catch (e) { this.perm = 'prompt'; }
+    if (this.perm === 'granted') { this.err = null; setTimeout(() => this.syncAll(), 1200); } // copia tutto quello fatto nel frattempo
+    else if (!quiet) toast('Accesso alla cartella non concesso: i dati restano nell\'app', true, 5000);
     syncBadge(); if (!$('#home').classList.contains('hide')) renderHome(); return this.perm === 'granted';
+  },
+  async recheck() { // tornando all'app: il permesso potrebbe essere scaduto
+    if (!this.root) return; let p = this.perm; try { p = await this.root.queryPermission({ mode: 'readwrite' }); } catch (e) { }
+    if (p !== this.perm) { this.perm = p; syncBadge(); if (!$('#home').classList.contains('hide')) renderHome(); }
   },
   kick(now) { if (!this.ready()) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.sync(), now ? 50 : 4000); },
   async sync() {
@@ -224,7 +229,7 @@ function pwaHomeBanners() {
   if (!isInstalled()) b.push(`<div class="banner">📲 Per usarla anche offline installala sul tablet: ${installEvt ? '<button class="sm pri" id="pwInst">Installa app</button>' : 'menu ⋮ di Chrome → <b>Installa app</b> (o "Aggiungi a schermata Home")'}.</div>`);
   if (!Archive.ok()) b.push(`<div class="banner warn">Questo browser non permette di scegliere una cartella: per avere i file usa "Backup completo" nel Computo.</div>`);
   else if (!Archive.root) b.push(`<div class="banner warn">📁 Scegli la cartella dove salvare dati, piante, foto e audio: una cartella <b>sul tablet</b> (es. Documenti/Rilievi), non su Drive. <button class="sm pri" id="pwPick">Scegli cartella</button></div>`);
-  else if (!Archive.ready()) b.push(`<div class="banner warn">📁 Archivio nella cartella "${esc(Archive.root.name)}" in pausa: <button class="sm pri" id="pwRegrant">Riattiva</button></div>`);
+  else if (!Archive.ready()) b.push(`<div class="banner warn">📁 Cartella "${esc(Archive.root.name)}" da riattivare: si riattiva aprendo un sopralluogo (tocca "Consenti"), oppure <button class="sm pri" id="pwRegrant">Riattiva ora</button>. Nel frattempo i dati restano nell'app.</div>`);
   else b.push(`<div class="banner">📁 Archivio: cartella "<b>${esc(Archive.root.name)}</b>" ✓ <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`);
   if (!CAP.sample) b.push(aiAvailHtml());
   const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7); if (sp[m]) b.push(`<div class="mut small">✦ Spesa AI di questo mese su questo tablet: ${fmtUsd(sp[m])}</div>`);
@@ -238,7 +243,7 @@ function pwaHomeWire() {
   on('pwRecover', recoverFromFolder);
 }
 function pwaBadge(b) {
-  if (Archive.root && !Archive.ready()) { b.className = 'chip warn'; b.textContent = 'Cartella in pausa'; b.onclick = () => Archive.regrant(); return; }
+  if (Archive.root && !Archive.ready()) { b.className = 'chip warn'; b.textContent = 'Cartella: tocca per riattivare'; b.onclick = () => Archive.regrant(); return; }
   b.onclick = null;
   if (Archive.err) { b.className = 'chip bad'; b.textContent = 'Errore cartella'; b.title = Archive.err; b.onclick = () => toast(ARCH_HELP + ' (' + Archive.err + ')', true, 12000); return; }
   if (Sync.pending() || Sync.busy || Archive.busy) { b.className = 'chip grey'; b.textContent = 'Salvataggio…'; return; }
@@ -283,6 +288,7 @@ async function pwaBoot() {
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (!$('#home').classList.contains('hide')) renderHome(); });
   window.addEventListener('appinstalled', () => { installEvt = null; toast('App installata: la trovi tra le app del tablet'); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) Archive.recheck(); });
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { console.warn('sw', e); }
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtl) toast('App aggiornata: chiudila e riaprila per usare la nuova versione', false, 7000); });
