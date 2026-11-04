@@ -339,17 +339,10 @@ function hitTest(sx, sy) {
     for (let i = 0; i < ed.poly.length; i++) { const [a, b] = toS(...ed.poly[i]); if (Math.hypot(sx - a, sy - b) < 18) return { t: 'vtx', o: ed, i }; }
     for (let i = 0; i < ed.poly.length; i++) { const p = ed.poly[i], q = ed.poly[(i + 1) % ed.poly.length]; const [a, b] = toS((p[0] + q[0]) / 2, (p[1] + q[1]) / 2); if (Math.hypot(sx - a, sy - b) < 14) return { t: 'mid', o: ed, i }; }
   }
-  if (S.sel && S.sel.t === 'photo') {
-    const ph = photoById(S.sel.id);
-    if (ph && ph.x != null && (ph.kind === 'parete' || ph.kind === 'soffitto')) {
-      const [cx, cy] = toS(ph.x, ph.y);
-      const [hx, hy] = photoHandle(ph); if (Math.hypot(sx - hx, sy - hy) < 26) return { t: 'rot', o: ph };
-    }
-  }
   let best = null, bd = Infinity;
   for (const n of S.vnotes) { if (n.planId !== P.id) continue; const [a, b] = toS(n.x, n.y); const d = Math.hypot(sx - a, sy - b); if (d < 18 && d < bd) { bd = d; best = { t: 'vnote', o: n }; } }
   if (best) return best;
-  for (const it of S.items) {
+  for (const it of S.items) { // gli oggetti vengono prima di coni e stanze
     if (it.planId !== P.id || !itemVisible(it)) continue;
     let d;
     if (it.pts) { d = Infinity; for (let i = 1; i < it.pts.length; i++) d = Math.min(d, segDist([sx, sy], toS(...it.pts[i - 1]), toS(...it.pts[i]))); d += 4; }
@@ -357,7 +350,11 @@ function hitTest(sx, sy) {
     if (d < R && d < bd) { bd = d; best = { t: 'item', o: it }; }
   }
   if (best) return best;
-  for (const ph of S.photos) {
+  if (S.sel && S.sel.t === 'photo') { // punta del cono della foto selezionata
+    const ph = photoById(S.sel.id);
+    if (ph && ph.x != null && (ph.kind === 'parete' || ph.kind === 'soffitto')) { const [hx, hy] = photoHandle(ph); if (Math.hypot(sx - hx, sy - hy) < 26) return { t: 'rot', o: ph }; }
+  }
+  for (const ph of S.photos) { // la foto si prende solo dal pallino, non dal cono
     if (ph.planId !== P.id || ph.x == null) continue;
     if (!ST().cones && S.tool !== 'photo' && !(S.sel && S.sel.id === ph.id)) continue;
     const [a, b] = toS(ph.x, ph.y); const d = Math.hypot(sx - a, sy - b); if (d < 20 && d < bd) { bd = d; best = { t: 'photo', o: ph }; }
@@ -365,7 +362,16 @@ function hitTest(sx, sy) {
   if (best) return best;
   for (const d of S.draws) { if (d.planId !== P.id) continue; for (const st of d.strokes) { const tol = Math.max(10, st.w * S.view.s / 2 + 6); for (let i = 1; i < st.pts.length; i++) { const dd = segDist([sx, sy], toS(...st.pts[i - 1]), toS(...st.pts[i])); if (dd < tol && dd < bd) { bd = dd; best = { t: 'draw', o: d }; } } } }
   if (best) return best;
-  const [bx, by] = toB(sx, sy); const r = roomAt(P.id, bx, by); return r ? { t: 'room', o: r } : null;
+  return roomHit(P, sx, sy);
+}
+function roomHit(P, sx, sy) { // la stanza si prende dal bordo o dal nome, non dall'area (così gli oggetti dentro restano facili da toccare)
+  let best = null, bd = 14;
+  for (const r of roomsOfPlan(P.id)) {
+    for (let i = 0; i < r.poly.length; i++) { const d = segDist([sx, sy], toS(...r.poly[i]), toS(...r.poly[(i + 1) % r.poly.length])); if (d < bd) { bd = d; best = { t: 'room', o: r }; } }
+    const [cx, cy] = toS(...polyCentroid(r.poly)); const w = ((r.done ? 2 : 0) + r.name.length) * 3.9 + 8;
+    if (!best && Math.abs(sx - cx) < w && sy > cy - 15 && sy < cy + 7) best = { t: 'room', o: r };
+  }
+  return best;
 }
 function select(t, id) { S.sel = t ? { t, id } : null; renderPanel(); redraw(); }
 

@@ -114,6 +114,7 @@ async function snapshotFromIDB(sid) { // sopralluogo chiuso, letto dalla copia s
   }
   return o;
 }
+const ARCH_HELP = 'La cartella scelta non accetta i file. Se è su Google Drive o su un altro cloud, scegline una sul tablet (es. Documenti/Rilievi): Impostazioni → Cambia cartella. I dati restano comunque salvati nell\'app.';
 const Archive = {
   root: null, perm: 'none', busy: false, again: false, timer: null, err: null, last: new Map(),
   ok: () => typeof window.showDirectoryPicker === 'function',
@@ -125,7 +126,7 @@ const Archive = {
   async pick() {
     let h; try { h = await window.showDirectoryPicker({ id: 'rilievi', mode: 'readwrite', startIn: 'documents' }); }
     catch (e) { if (e && e.name !== 'AbortError') toast('Cartella non disponibile: ' + (e.message || e.name), true, 6000); return false; }
-    this.root = h; this.perm = 'granted'; this.last.clear(); await this.saveHandle(h);
+    this.root = h; this.perm = 'granted'; this.last.clear(); this.err = null; KV.set('archGen', uid('g')); await this.saveHandle(h); // cartella nuova: si riscrive tutto
     toast('Archivio nella cartella "' + h.name + '": salvo i sopralluoghi…', false, 5000); await this.syncAll(); return true;
   },
   async saveHandle(h) { try { await IDB.put('docs', { path: '__archivio', handle: h }); } catch (e) { console.warn('cartella non memorizzata', e); } },
@@ -140,23 +141,34 @@ const Archive = {
     if (!this.ready() || !S.sv) return; if (this.busy) { this.again = true; return; }
     this.busy = true; syncBadge();
     try { const ch = await this.writeSurvey(surveySnapshot(), S.sv); if (ch) Sync.mark('meta'); this.err = null; }
-    catch (e) { console.warn('archivio', e); this.err = (e && e.message) || String(e); if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) this.perm = 'prompt'; }
+    catch (e) { await this.fail(e); }
     this.busy = false; syncBadge(); if (this.again) { this.again = false; this.kick(); }
   },
   async syncAll() { // tutti i sopralluoghi del tablet, anche quelli chiusi
     if (!this.ready()) return 0; let n = 0;
+    if (S.sv) { await this.sync(); n++; } // quello aperto (anche se non è ancora nell'elenco)
     for (const s of S.surveys) {
       try {
-        if (S.sv && S.sv.id === s.id) { await this.sync(); n++; continue; }
+        if (S.sv && S.sv.id === s.id) continue;
         const snap = await snapshotFromIDB(s.id); if (!snap) continue;
         const ch = await this.writeSurvey(snap, snap.survey); n++;
-        if (ch) { const d = await IDB.get('docs', base() + '/' + s.id); if (d) { d.data.dir = snap.survey.dir; d.data.arch = snap.survey.arch; await IDB.put('docs', d); } }
-      } catch (e) { console.warn('archivio', s.id, e); this.err = (e && e.message) || String(e); }
+        if (ch) { const d = await IDB.get('docs', base() + '/' + s.id); if (d) { d.data.dir = snap.survey.dir; d.data.arch = snap.survey.arch; d.data.archGen = snap.survey.archGen; await IDB.put('docs', d); } }
+      } catch (e) { await this.fail(e); }
     }
     syncBadge(); return n;
   },
+  async fail(e) {
+    console.warn('archivio', e);
+    if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) { // permesso scaduto, o cartella che non accetta scritture?
+      let p = 'prompt'; try { p = await this.root.queryPermission({ mode: 'readwrite' }); } catch (x) { }
+      if (p !== 'granted') { this.perm = p; return; }
+    }
+    const first = !this.err; this.err = `${(e && e.name) || 'Errore'}${e && e.message ? ': ' + e.message : ''}`;
+    if (first) toast(ARCH_HELP, true, 9000);
+  },
   async writeSurvey(snap, sv) { // scrive cartella, file nuovi e rilievo.json; restituisce true se ha cambiato la mappa dei file
-    let changed = false;
+    let changed = false; const gen = KV.get('archGen', 'g0');
+    if (sv.archGen !== gen) { sv.arch = {}; sv.archGen = gen; changed = true; } // la mappa dei file vale solo per la cartella in cui sono stati scritti
     if (!sv.dir) { sv.dir = `${safeName(sv.name)}_${sv.id.slice(-5)}`; changed = true; }
     const arch = sv.arch || (sv.arch = {}); const dir = await fsDir(this.root, [sv.dir]);
     const rn = id => (snap.rooms.find(r => r.id === id) || {}).name || 'esterno';
@@ -211,7 +223,7 @@ function pwaHomeBanners() {
   const b = [];
   if (!isInstalled()) b.push(`<div class="banner">📲 Per usarla anche offline installala sul tablet: ${installEvt ? '<button class="sm pri" id="pwInst">Installa app</button>' : 'menu ⋮ di Chrome → <b>Installa app</b> (o "Aggiungi a schermata Home")'}.</div>`);
   if (!Archive.ok()) b.push(`<div class="banner warn">Questo browser non permette di scegliere una cartella: per avere i file usa "Backup completo" nel Computo.</div>`);
-  else if (!Archive.root) b.push(`<div class="banner warn">📁 Scegli la cartella dove salvare dati, piante, foto e audio (es. Documenti/Rilievi): <button class="sm pri" id="pwPick">Scegli cartella</button></div>`);
+  else if (!Archive.root) b.push(`<div class="banner warn">📁 Scegli la cartella dove salvare dati, piante, foto e audio: una cartella <b>sul tablet</b> (es. Documenti/Rilievi), non su Drive. <button class="sm pri" id="pwPick">Scegli cartella</button></div>`);
   else if (!Archive.ready()) b.push(`<div class="banner warn">📁 Archivio nella cartella "${esc(Archive.root.name)}" in pausa: <button class="sm pri" id="pwRegrant">Riattiva</button></div>`);
   else b.push(`<div class="banner">📁 Archivio: cartella "<b>${esc(Archive.root.name)}</b>" ✓ <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`);
   if (!CAP.sample) b.push(aiAvailHtml());
@@ -228,7 +240,7 @@ function pwaHomeWire() {
 function pwaBadge(b) {
   if (Archive.root && !Archive.ready()) { b.className = 'chip warn'; b.textContent = 'Cartella in pausa'; b.onclick = () => Archive.regrant(); return; }
   b.onclick = null;
-  if (Archive.err) { b.className = 'chip bad'; b.textContent = 'Errore cartella'; b.title = Archive.err; return; }
+  if (Archive.err) { b.className = 'chip bad'; b.textContent = 'Errore cartella'; b.title = Archive.err; b.onclick = () => toast(ARCH_HELP + ' (' + Archive.err + ')', true, 12000); return; }
   if (Sync.pending() || Sync.busy || Archive.busy) { b.className = 'chip grey'; b.textContent = 'Salvataggio…'; return; }
   b.className = 'chip ok'; b.textContent = Archive.ready() ? 'Salvato ✓ tablet + cartella' : 'Salvato sul tablet ✓';
 }
@@ -236,9 +248,9 @@ function pwaSettingsHtml() {
   const k = KV.get('apiKey'); const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7);
   return `<label class="f">Chiave API Anthropic (per il riconoscimento AI)</label>
     <div class="row"><input id="tKey" type="password" autocomplete="off" placeholder="sk-ant-…" value="${k ? '••••••••' + esc(k.slice(-4)) : ''}"><button id="tKeyTest" style="flex:none">Prova</button></div>
-    <div class="mut small">Resta solo su questo tablet. Si crea su console.anthropic.com → API keys (serve credito prepagato). Spesa AI su questo tablet: ${fmtUsd(sp[m] || 0)} questo mese, ${fmtUsd(sp.all || 0)} in tutto.</div>
+    <div class="mut small">Resta solo su questo tablet. Si crea su platform.claude.com → API keys, scegliendo il workspace "Default" (serve credito prepagato). Spesa AI su questo tablet: ${fmtUsd(sp[m] || 0)} questo mese, ${fmtUsd(sp.all || 0)} in tutto.</div>
     <label class="f">Archivio su cartella</label>
-    <div class="row wrap">${Archive.ok() ? `<span class="small" style="flex:1">${Archive.root ? `Cartella "<b>${esc(Archive.root.name)}</b>"${Archive.ready() ? ' ✓' : ' (in pausa)'}` : 'Nessuna cartella scelta'}</span><button class="sm" id="tArch" style="flex:none">${Archive.root ? 'Cambia cartella' : 'Scegli cartella'}</button>${Archive.root ? '<button class="sm" id="tArchAll" style="flex:none">Salva tutto ora</button><button class="sm" id="tArchRec" style="flex:none">Recupera dalla cartella</button>' : ''}` : '<span class="mut small">Non disponibile in questo browser: usa "Backup completo".</span>'}</div>`;
+    <div class="row wrap">${Archive.ok() ? `<span class="small" style="flex:1">${Archive.root ? `Cartella "<b>${esc(Archive.root.name)}</b>"${Archive.err ? ' <span style="color:var(--bad)">– errore: ' + esc(Archive.err) + '</span>' : Archive.ready() ? ' ✓' : ' (in pausa)'}` : 'Nessuna cartella scelta'}</span><button class="sm" id="tArch" style="flex:none">${Archive.root ? 'Cambia cartella' : 'Scegli cartella'}</button>${Archive.root ? '<button class="sm" id="tArchAll" style="flex:none">Salva tutto ora</button><button class="sm" id="tArchRec" style="flex:none">Recupera dalla cartella</button>' : ''}` : '<span class="mut small">Non disponibile in questo browser: usa "Backup completo".</span>'}</div>`;
 }
 function pwaSettingsWire(b) {
   const q = s => b.querySelector(s);
