@@ -59,6 +59,8 @@ async function runAI(id) {
       const res = await CAP.sample.json(promptRilievo(ph), { images: [blob], modelTier: ST().tier, ...nocache });
       if (!photoById(id)) return;
       ph.ai = normRilievo(res);
+      if (ST().plZoom !== false) { try { await zoomPlates(ph, blob, nocache); } catch (e) { console.warn('ingrandimento placche', e); if (e && e.code === 'rate_limited') toast(AI_ERR.rate_limited, true); } }
+      if (!photoById(id)) return;
       if (ph.kind === 'parete' || ph.kind === 'soffitto') applyDetections(ph, true);
     }
     ph.ai.at = Date.now(); ph.aiSt = 'done'; ph.aiErr = null;
@@ -82,12 +84,67 @@ async function runAI(id) {
     }
   }
 }
+/* ---- secondo sguardo alle placche: ogni placca viene ritagliata e ingrandita, così l'AI conta i posti e distingue tappi e frutti ---- */
+const zoomable = d => !d.indizio && !d.linea && !!d.bbox && (d.bbox[2] - d.bbox[0]) < 0.5 && (d.bbox[3] - d.bbox[1]) < 0.5 && !!(d.pl || PL_REV[d.code]);
+const zoomBox = b => { const w = b[2] - b[0], h = b[3] - b[1]; const mx = Math.max(1.2 * w, 0.1), my = Math.max(1.0 * h, 0.07); return [b[0] - mx, b[1] - my, b[2] + mx, b[3] + my].map(v => r3(clamp(v, 0, 1))); };
+const unionBox = bs => [Math.min(...bs.map(b => b[0])), Math.min(...bs.map(b => b[1])), Math.max(...bs.map(b => b[2])), Math.max(...bs.map(b => b[3]))].map(r3);
+function plateGroups(dets) { // le rilevazioni da ingrandire, raggruppate quando sono frutti della stessa placca
+  const groups = [];
+  dets.filter(zoomable).forEach(d => { const g = groups.find(g => g.dets.some(x => samePlate(x.bbox, d.bbox))); if (g) g.dets.push(d); else groups.push({ dets: [d] }); });
+  groups.forEach(g => { g.box = unionBox(g.dets.map(d => d.bbox)); });
+  return groups.slice(0, 12);
+}
+function promptPlacche(n) {
+  return `Sei un tecnico che esegue il rilievo dell'impianto elettrico esistente. Ricevi ingrandimenti di placche (comandi e prese) ritagliati da una foto di sopralluogo.
+
+CONTESTO
+- Ti mando ${n} ingrandiment${n > 1 ? 'i' : 'o'} presi dalla stessa foto, numerati nell'ordine in cui li ricevi: la placca è al centro, intorno c'è parete o altro.
+
+COMPITO
+Per ogni ingrandimento:
+1. Conta i POSTI della placca, tappi compresi: un posto è largo come un tasto. La placca rettangolare orizzontale classica (scatola 503) ha 3 posti; esistono anche placche da 1, 2, 4, 6 e 7 posti.
+2. Dì cosa c'è in OGNI posto, da sinistra a destra (dall'alto in basso se la placca è verticale):
+- TAPPO (copriforo): modulo liscio e piatto, senza tasto, senza fori, senza simboli, a filo della cornice → null.
+- Tasto di interruttore, deviatore o pulsante: ha una fessura tutto intorno, di solito è un po' sporgente o inclinato (bascula), a volte con spia o simbolo. In foto interruttore, deviatore e invertitore sono uguali: usa 0035_INTERRUTTORE (con spia luminosa 0037_INTERRUTTORE_LUMINOSO; con il simbolo del campanello 0132_CH; con le frecce su/giù per la tapparella 0106_SALI-SCENDI).
+- Presa italiana con 3 fori in linea → 0075a_BIPRESA (0046_PRESA_10A solo se leggi la scritta 10A sul frutto, e in quel caso scrivi «scritta 10A» nella nota).
+- Presa con due fori più il buco tondo grande o le alette laterali (schuko o universale) → è larga 2 posti: il suo codice e poi null.
+- Prese TV, SAT, dati, telefono, USB, termostati, variatori: i codici qui sotto.
+Codici della legenda:
+${symListForAI(['C', 'P'])}
+Se un ingrandimento non è una placca a più posti (es. presa CEE, frutto a giorno, scatola), rispondi "posti":1 con il codice del frutto. Se non riesci a capire, "conf" bassa.
+Rispondi SOLO con questo JSON:
+{"placche":[{"img":1,"posti":3,"placca":[null,"0035_INTERRUTTORE",null],"conf":0.8,"note":"breve: cosa vedi in ogni posto"}]}`;
+}
+async function zoomPlates(ph, blob, nocache) { // seconda passata: aggiorna ph.ai.dets prima che diventino oggetti
+  const ai = ph.ai; if (!ai || !ai.dets || !ai.dets.length) return;
+  const groups = plateGroups(ai.dets); if (!groups.length) return;
+  const per = Math.max(1, Math.min(CAP.imgMax || 1, 6)); const drop = new Set(); let calls = 0;
+  for (let i0 = 0; i0 < groups.length && calls < 4; i0 += per, calls++) {
+    const part = groups.slice(i0, i0 + per); const imgs = [];
+    for (const g of part) imgs.push((await cropBlob(blob, zoomBox(g.box), 1600, 900)).blob);
+    const res = await CAP.sample.json(promptPlacche(imgs.length), { images: imgs, modelTier: ST().tier, ...nocache });
+    const arr = res && Array.isArray(res.placche) ? res.placche : Array.isArray(res) ? res : [];
+    part.forEach((g, gi) => {
+      const r = arr.find(x => x && parseInt(x.img) === gi + 1) || arr[gi]; if (!r || typeof r !== 'object') return;
+      const d = g.dets[0]; const note = String(r.note || '').slice(0, 160);
+      const no10 = c => c === '0046_PRESA_10A' && !/scritta\s*["«']?\s*10\s*A/i.test(note) && hasSym('0075a_BIPRESA') ? '0075a_BIPRESA' : c;
+      let pl = normPlacca(r.placca); const posti = parseInt(r.posti);
+      if (pl) { pl = pl.map(c => c && no10(c)); d.pl = pl; d.code = pl.find(Boolean); d.n = 1; }
+      else if (posti === 1 && Array.isArray(r.placca) && r.placca.filter(Boolean).length === 1 && resolveCode(r.placca.find(Boolean))) { d.code = no10(resolveCode(r.placca.find(Boolean))); delete d.pl; d.n = 1; }
+      else return; // niente di utile: resta la prima lettura
+      d.bbox = g.box; d.zoom = true; const c = n01(r.conf); if (c != null) d.conf = c;
+      if (note) d.note = ((d.note ? d.note + ' – ' : '') + 'ingrandimento: ' + note).slice(0, 200);
+      g.dets.slice(1).forEach(x => drop.add(x));
+    });
+  }
+  if (drop.size) ai.dets = ai.dets.filter(d => !drop.has(d));
+}
 /* ---- ritagli per leggere i quadri ---- */
-async function cropBlob(blob, box, maxSide = 2048) {
+async function cropBlob(blob, box, maxSide = 2048, minSide = 0) { // minSide: i ritagli piccoli vengono ingranditi (fino a 3x)
   const bm = await createImageBitmap(blob); const W = bm.width, H = bm.height;
   const x0 = clamp(Math.floor(box[0] * W), 0, W - 2), y0 = clamp(Math.floor(box[1] * H), 0, H - 2);
   const x1 = clamp(Math.ceil(box[2] * W), x0 + 2, W), y1 = clamp(Math.ceil(box[3] * H), y0 + 2, H);
-  const cw = x1 - x0, ch = y1 - y0, k = Math.min(1, maxSide / Math.max(cw, ch));
+  const cw = x1 - x0, ch = y1 - y0; let k = Math.min(1, maxSide / Math.max(cw, ch)); if (minSide && Math.max(cw, ch) * k < minSide) k = Math.min(3, minSide / Math.max(cw, ch));
   const c = newCanvas(Math.round(cw * k), Math.round(ch * k), false); c.getContext('2d').drawImage(bm, x0, y0, cw, ch, 0, 0, c.width, c.height);
   return { blob: await canvasToBlob(c, 'image/jpeg', 0.92), px: c.width * c.height };
 }
@@ -101,8 +158,8 @@ async function quadroImages(blob, box) { // quadro intero + metà sinistra e des
   return { imgs, box: b };
 }
 const r3 = v => Math.round(v * 1000) / 1000;
-function symListForAI() { // i simboli della legenda dell'utente, per categoria
-  const by = {}; S.lib.symbols.filter(s => s.ai !== 0 && s.ai !== false).forEach(s => (by[s.cat] = by[s.cat] || []).push(s));
+function symListForAI(cats) { // i simboli della legenda dell'utente, per categoria (tutte o solo alcune)
+  const by = {}; S.lib.symbols.filter(s => s.ai !== 0 && s.ai !== false && (!cats || cats.includes(s.cat))).forEach(s => (by[s.cat] = by[s.cat] || []).push(s));
   return Object.entries(CATS).filter(([c]) => by[c]).map(([c, cd]) => `# ${cd.n}\n` + by[c].map(s => `${s.code} | ${s.name} | ${MOUNTS[s.mount] || s.mount}`).join('\n')).join('\n');
 }
 const hasSym = c => S.lib.symbols.some(s => s.code === c);
