@@ -94,14 +94,15 @@ function plateGroups(dets) { // le rilevazioni da ingrandire, raggruppate quando
   groups.forEach(g => { g.box = unionBox(g.dets.map(d => d.bbox)); });
   return groups.slice(0, 12);
 }
-const firstReading = d => d.pl ? `posti ${d.pl.length}: ${d.pl.map(c => c || 'tappo').join(', ')}` : `frutto singolo ${d.code}`;
+const firstReading = d => d.pl ? `placca ${d.pl.length} posti: ${d.pl.map(c => c || 'tappo').join(', ')}` : `frutto singolo ${d.code}`;
+const groupReading = g => g.dets.map(firstReading).join(' + accanto: ');
 function promptPlacche(groups) {
   const n = groups.length;
   return `Sei un tecnico che esegue il rilievo dell'impianto elettrico esistente. Ricevi ingrandimenti di placche (comandi e prese) ritagliati da una foto di sopralluogo, con la prima lettura fatta sulla foto intera, da controllare.
 
 CONTESTO
 - Ti mando ${n} ingrandiment${n > 1 ? 'i' : 'o'} presi dalla stessa foto, numerati nell'ordine in cui li ricevi: la placca è al centro, intorno c'è parete o altro.
-${groups.map((g, i) => `- Ingrandimento ${i + 1}, prima lettura: ${firstReading(g.dets[0])}`).join('\n')}
+${groups.map((g, i) => `- Ingrandimento ${i + 1}, prima lettura: ${groupReading(g)}`).join('\n')}
 
 COMPITO
 Per ogni ingrandimento controlla la prima lettura e correggila SOLO per quello che vedi con certezza nell'ingrandimento:
@@ -110,9 +111,10 @@ Per ogni ingrandimento controlla la prima lettura e correggila SOLO per quello c
 3. TASTI e TAPPI: un tappo è un modulo liscio senza fori né simboli, un tasto gli somiglia molto. Se non sei SICURO, lascia per quei posti quello che diceva la prima lettura. Per i tasti usa 0035_INTERRUTTORE (con spia 0037_INTERRUTTORE_LUMINOSO; con le frecce su/giù 0106_SALI-SCENDI). Pulsante o campanello SOLO se vedi il simbolo del campanello o la scritta: mai trasformare un tappo o un tasto in un pulsante.
 Codici della legenda:
 ${symListForAI(['C', 'P'])}
+4. PLACCHE AFFIANCATE: se nell'ingrandimento vedi più placche con cornici separate (es. le prese di corrente e, accanto, una placchetta con le prese dati), riporta UNA VOCE PER OGNI PLACCA, con lo stesso "img", da sinistra a destra, ognuna con il suo "bbox" (coordinate 0-1 dentro l'ingrandimento). Non unirle e non dimenticare la seconda.
 Se un ingrandimento non è una placca a più posti (es. presa CEE, frutto a giorno, scatola), rispondi "posti":1 con il codice del frutto. Se non riesci a capire, ripeti la prima lettura con "conf" bassa.
 Rispondi SOLO con questo JSON:
-{"placche":[{"img":1,"posti":3,"placca":[null,"0075a_BIPRESA",null],"conf":0.8,"note":"breve: cosa vedi in ogni posto"}]}`;
+{"placche":[{"img":1,"bbox":[0.2,0.35,0.6,0.65],"posti":7,"placca":["0076_SCHUKO",null,"0076_SCHUKO",null,"0075a_BIPRESA","0075a_BIPRESA","0075a_BIPRESA"],"conf":0.9,"note":"2 schuko e 3 bipasso"},{"img":1,"bbox":[0.62,0.37,0.8,0.63],"posti":2,"placca":["0080_DATI","0080_DATI"],"conf":0.8,"note":"placchetta accanto con 2 prese dati"}]}`;
 }
 const CMD_OPTS = new Set(['interruttore', 'interruttore_lum', 'deviatore', 'invertitore', 'puls_luce', 'puls_lum', 'puls_campanello', 'puls_cancellino', 'puls_altro', 'tapparella', 'variatore']);
 const flatMod = c => c == null || CMD_OPTS.has(PL_REV[c]); // tappo o tasto: in foto si somigliano
@@ -122,24 +124,34 @@ async function zoomPlates(ph, blob, nocache) { // seconda passata: aggiorna ph.a
   const per = Math.max(1, Math.min(CAP.imgMax || 1, 6)); const drop = new Set(); let calls = 0;
   for (let i0 = 0; i0 < groups.length && calls < 4; i0 += per, calls++) {
     const part = groups.slice(i0, i0 + per); const imgs = [];
-    for (const g of part) imgs.push((await cropBlob(blob, zoomBox(g.box), 1600, 900)).blob);
+    for (const g of part) { g.zb = zoomBox(g.box); imgs.push((await cropBlob(blob, g.zb, 1600, 900)).blob); }
     const res = await CAP.sample.json(promptPlacche(part), { images: imgs, modelTier: ST().tier, ...nocache });
-    const arr = res && Array.isArray(res.placche) ? res.placche : Array.isArray(res) ? res : [];
+    const arr = (res && Array.isArray(res.placche) ? res.placche : Array.isArray(res) ? res : []).filter(x => x && typeof x === 'object');
+    const noImg = arr.every(x => !(parseInt(x.img) >= 1));
     part.forEach((g, gi) => {
-      const r = arr.find(x => x && parseInt(x.img) === gi + 1) || arr[gi]; if (!r || typeof r !== 'object') return;
-      const d = g.dets[0]; const note = String(r.note || '').slice(0, 160);
-      const no10 = c => c === '0046_PRESA_10A' && !/scritta\s*["«']?\s*10\s*A/i.test(note) && hasSym('0075a_BIPRESA') ? '0075a_BIPRESA' : c;
-      const posti = parseInt(r.posti); let pl = posti === 1 ? null : normPlacca(r.placca, r.posti);
-      if (pl) {
-        pl = pl.map(c => c && no10(c));
-        if (d.pl && d.pl.length === pl.length) pl = pl.map((c, i) => flatMod(d.pl[i]) && flatMod(c) ? d.pl[i] : c); // stesso numero di posti: tasti e tappi restano come nella prima lettura
-        d.pl = pl; d.code = pl.find(Boolean); d.n = 1;
-      }
-      else if (posti === 1 && Array.isArray(r.placca) && r.placca.filter(Boolean).length === 1 && resolveCode(r.placca.find(Boolean))) { d.code = no10(resolveCode(r.placca.find(Boolean))); delete d.pl; d.n = 1; }
-      else return; // niente di utile: resta la prima lettura
-      d.bbox = g.box; d.zoom = true; const c = n01(r.conf); if (c != null) d.conf = c;
-      if (note) d.note = ((d.note ? d.note + ' – ' : '') + 'ingrandimento: ' + note).slice(0, 200);
-      g.dets.slice(1).forEach(x => drop.add(x));
+      let rs = noImg ? arr.slice(gi, gi + 1) : arr.filter(x => parseInt(x.img) === gi + 1); if (!rs.length) return;
+      const inCrop = b => { const a = arr4(b); return a ? [g.zb[0] + a[0] * (g.zb[2] - g.zb[0]), g.zb[1] + a[1] * (g.zb[3] - g.zb[1]), g.zb[0] + a[2] * (g.zb[2] - g.zb[0]), g.zb[1] + a[3] * (g.zb[3] - g.zb[1])].map(r3) : null; };
+      rs = rs.map(r => ({ r, box: inCrop(r.bbox) })).sort((a, b) => (a.box ? a.box[0] : 0) - (b.box ? b.box[0] : 0)).slice(0, 4); // da sinistra a destra
+      const used = new Set();
+      rs.forEach(({ r, box }, ri) => {
+        const note = String(r.note || '').slice(0, 160);
+        const no10 = c => c === '0046_PRESA_10A' && !/scritta\s*["«']?\s*10\s*A/i.test(note) && hasSym('0075a_BIPRESA') ? '0075a_BIPRESA' : c;
+        const posti = parseInt(r.posti); let pl = posti === 1 ? null : normPlacca(r.placca, r.posti);
+        const single = !pl && posti === 1 && Array.isArray(r.placca) && r.placca.filter(Boolean).length === 1 ? resolveCode(r.placca.find(Boolean)) : null;
+        if (!pl && !single) return; // niente di utile: resta la prima lettura
+        let d = g.dets[ri];
+        if (!d) { d = { ...g.dets[0], linea: null, indizio: false }; delete d.pl; delete d.tag; delete d.oltre; ai.dets.push(d); } // una placca in più accanto (es. le prese dati): nuova rilevazione
+        used.add(d);
+        if (pl) {
+          pl = pl.map(c => c && no10(c));
+          if (d.pl && d.pl.length === pl.length) pl = pl.map((c, i) => flatMod(d.pl[i]) && flatMod(c) ? d.pl[i] : c); // stesso numero di posti: tasti e tappi restano come nella prima lettura
+          d.pl = pl; d.code = pl.find(Boolean); d.n = 1;
+        } else { d.code = no10(single); delete d.pl; d.n = 1; }
+        const bb = box && box[2] - box[0] > 0.005 && box[3] - box[1] > 0.005 ? box : rs.length > 1 ? [g.box[0] + (g.box[2] - g.box[0]) * ri / rs.length, g.box[1], g.box[0] + (g.box[2] - g.box[0]) * (ri + 1) / rs.length, g.box[3]].map(r3) : g.box;
+        d.bbox = bb; d.pt = [r3((bb[0] + bb[2]) / 2), r3((bb[1] + bb[3]) / 2)]; d.zoom = true; const c = n01(r.conf); if (c != null) d.conf = c;
+        if (note) d.note = (((g.dets[ri] && d.note) ? d.note + ' – ' : '') + 'ingrandimento: ' + note).slice(0, 200);
+      });
+      if (used.size) g.dets.forEach(x => { if (!used.has(x)) drop.add(x); });
     });
   }
   if (drop.size) ai.dets = ai.dets.filter(d => !drop.has(d));
@@ -287,9 +299,14 @@ function applyDetections(ph, fresh) {
     const it = { id: uid('i'), planId: ph.planId, photoId: ph.id, roomId: ph.roomId, s: det.code, x: 0, y: 0, pts: null, d: di, src: 'ai', ok: false, lk: false, n: det.n, h: det.h_m, note: det.note, conf: det.conf, est: false };
     if (det.indizio) it.hint = true; if (det.oltre) it.oltre = true; if (det.tag) it.tag = det.tag; detPlate(it, det);
     placeItem(it, ph); const r = roomAt(ph.planId, it.x, it.y); it.roomId = r ? r.id : ph.roomId;
-    const near = fresh && !it.hint ? kept.find(o => Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k && (plKey(o) === plKey(it) || ((isPlate(o) || PL_REV[o.s]) && (isPlate(it) || PL_REV[it.s])))) : null;
-    if (near) { // c'è già lì: se è solo spostato (non confermato) prende la nuova lettura tenendo la posizione; se è confermato resta com'è
-      if (!near.ok && near.d == null) { Object.assign(near, { s: it.s, n: it.n, note: it.note, conf: it.conf, d: di }); if (it.h != null) near.h = it.h; if (it.pl) { near.pl = it.pl; near.plInst = it.plInst; } else { delete near.pl; delete near.plInst; } if (it.tag) near.tag = it.tag; else delete near.tag; Sync.markItem(near); }
+    // c'è già lì un oggetto tenuto (confermato o spostato): la stessa lettura è un doppione; una lettura diversa viene assorbita una volta sola (il primo oggetto libero)
+    const near = fresh && !it.hint ? kept.find(o => Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k && (plKey(o) === plKey(it) || (o.d == null && (isPlate(o) || PL_REV[o.s]) && (isPlate(it) || PL_REV[it.s])))) : null;
+    if (near) {
+      if (near.d == null) { // se è solo spostato (non confermato) prende la nuova lettura tenendo la posizione; se è confermato resta com'è
+        near.d = di;
+        if (!near.ok) { Object.assign(near, { s: it.s, n: it.n, note: it.note, conf: it.conf }); if (it.h != null) near.h = it.h; if (it.pl) { near.pl = it.pl; near.plInst = it.plInst; } else { delete near.pl; delete near.plInst; } if (it.tag) near.tag = it.tag; else delete near.tag; }
+        Sync.markItem(near);
+      }
       return;
     }
     created.push(it);
