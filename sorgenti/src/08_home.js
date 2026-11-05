@@ -42,7 +42,7 @@ function renderHome() {
   if (!S.surveys.length) { L.innerHTML = `<div class="card" style="grid-column:1/-1"><b>Nessun sopralluogo.</b><div class="mut small" style="margin-top:4px">Crea il primo con "+ Nuovo sopralluogo", carica la planimetria (PDF, DXF o foto) e inizia dal primo locale.</div><button style="margin-top:10px" id="hImp">Importa un backup (ZIP o JSON)</button></div>`; $('#hImp').onclick = () => $('#fJson').click(); return; }
   L.innerHTML = S.surveys.map(s => { const st = s.stats || {}; return `<div class="card scard" data-id="${esc(s.id)}"><div class="row"><h3 style="flex:1">${esc(s.name)}</h3><button class="sm ghost" data-del="${esc(s.id)}" style="flex:none" title="Elimina">Elimina</button></div>
     <div class="mut small">${esc([s.client, s.address].filter(Boolean).join(' • ') || '—')}</div>
-    <div class="row wrap" style="gap:5px">${s.kind ? `<span class="chip grey">${esc(s.kind)}</span>` : ''}<span class="chip grey">${st.plans || (s.plans || []).length} tavole</span><span class="chip grey">${st.done || 0}/${st.rooms || 0} locali</span><span class="chip grey">${st.items || 0} elementi</span><span class="chip grey">${st.photos || 0} foto</span>${s.cost && s.cost.calls ? `<span class="chip ai">✦ AI ${fmtUsd(s.cost.usd)}</span>` : ''}${PLATFORM === 'pwa' && !Archive.ready() ? (s.lastBackup ? `<span class="chip grey">Backup ${fmtDate(s.lastBackup)}</span>` : '<span class="chip warn">Backup: mai</span>') : ''}</div>
+    <div class="row wrap" style="gap:5px">${s.kind ? `<span class="chip grey">${esc(s.kind)}</span>` : ''}<span class="chip grey">${st.plans || (s.plans || []).length} tavole</span>${s.closed ? `<span class="chip ok">Chiuso il ${fmtDate(s.closed)}</span>` : ''}<span class="chip grey">${st.done || 0}/${st.rooms || 0} locali</span><span class="chip grey">${st.items || 0} elementi</span><span class="chip grey">${st.photos || 0} foto</span>${s.cost && s.cost.calls ? `<span class="chip ai">✦ AI ${fmtUsd(s.cost.usd)}</span>` : ''}${PLATFORM === 'pwa' && !Archive.ready() ? (s.lastBackup ? `<span class="chip grey">Backup ${fmtDate(s.lastBackup)}</span>` : '<span class="chip warn">Backup: mai</span>') : ''}</div>
     <div class="mut small">Aggiornato ${fmtDate(s.updated || s.created)}</div></div>`; }).join('') + `<div class="card" style="display:flex;align-items:center;justify-content:center"><button id="hImp">Importa backup (ZIP o JSON)</button></div>`;
   L.querySelectorAll('.scard').forEach(c => c.onclick = e => { if (e.target.closest('[data-del]')) return; if (PLATFORM === 'pwa' && Archive.root && !Archive.ready()) Archive.regrant(true); openSurvey(c.dataset.id); });
   L.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteSurvey(b.dataset.del));
@@ -61,7 +61,7 @@ function surveyForm(sv, onOk) {
 function newSurvey() {
   surveyForm(null, f => {
     S.sv = { id: uid('s'), ...f, created: Date.now(), updated: Date.now(), plans: [], legV: LEGENDA.v };
-    S.rooms = []; S.items = []; S.photos = []; S.draws = []; S.vnotes = []; S.planId = null; S.sel = null; S.undo = [];
+    S.rooms = []; S.items = []; S.photos = []; S.draws = []; S.vnotes = []; S.closure = {}; S.showClosure = false; S.planId = null; S.sel = null; S.undo = [];
     Sync.mark('meta'); showSurvey();
     setTimeout(() => $('#fPlan').click(), 150);
   });
@@ -73,7 +73,7 @@ async function deleteSurvey(id) {
   const assets = (s.plans || []).map(pl => pl.asset).filter(Boolean);
   if (CAP.db) {
     try {
-      for (const col of ['plans', 'photos']) { const snap = await CAP.db.doc(p).collection(col).get(); for (const d of snap.docs) { const dd = d.data(); if (dd && dd.asset) assets.push(dd.asset); if (dd && dd.vnotes) dd.vnotes.forEach(n => n.asset && assets.push(n.asset)); await CAP.db.doc(p + '/' + col + '/' + d.id).delete(); } }
+      for (const col of ['plans', 'photos', 'closure']) { const snap = await CAP.db.doc(p).collection(col).get(); for (const d of snap.docs) { const dd = d.data(); if (dd && dd.asset) assets.push(dd.asset); if (dd && dd.vnotes) dd.vnotes.forEach(n => n.asset && assets.push(n.asset)); await CAP.db.doc(p + '/' + col + '/' + d.id).delete(); } }
       await CAP.db.doc(p).delete();
     } catch (e) { toast('Eliminazione non completata (sei offline?)', true); return; }
   }
@@ -85,7 +85,7 @@ async function deleteSurvey(id) {
 }
 function keyFromPath(path, root) {
   const rest = path.slice(root.length); if (!rest) return 'meta';
-  const m = rest.match(/^\/(plans|photos)\/(.+)$/); return m ? (m[1] === 'plans' ? 'plan:' : 'photo:') + m[2] : null;
+  const m = rest.match(/^\/(plans|photos|closure)\/(.+)$/); return m ? ({ plans: 'plan:', photos: 'photo:', closure: 'closure:' })[m[1]] + m[2] : null;
 }
 async function openSurvey(id) {
   $('#hList').innerHTML = '<div class="mut">Apro il sopralluogo…</div>';
@@ -94,7 +94,7 @@ async function openSurvey(id) {
     try {
       const m = await withTimeout(CAP.db.doc(root).get(), 12000);
       if (m.exists) docs.set(root, m.data());
-      for (const col of ['plans', 'photos']) { const snap = await withTimeout(CAP.db.doc(root).collection(col).get(), 15000); snap.docs.forEach(d => docs.set(root + '/' + col + '/' + d.id, d.data())); }
+      for (const col of ['plans', 'photos', 'closure']) { const snap = await withTimeout(CAP.db.doc(root).collection(col).get(), 15000); snap.docs.forEach(d => docs.set(root + '/' + col + '/' + d.id, d.data())); }
       remote = true;
     } catch (e) { toast('Offline: apro la copia salvata su questo tablet', true, 5000); }
   }
@@ -105,9 +105,10 @@ async function openSurvey(id) {
   }
   const meta = docs.get(root); if (!meta) { toast('Sopralluogo non trovato', true); renderHome(); return; }
   const { type, stats, ...sv } = meta; S.sv = JSON.parse(JSON.stringify(sv)); S.sv.plans = S.sv.plans || [];
-  S.rooms = []; S.items = []; S.photos = []; S.draws = []; S.vnotes = []; S.sel = null; S.undo = []; S.planImg = {};
+  S.rooms = []; S.items = []; S.photos = []; S.draws = []; S.vnotes = []; S.sel = null; S.undo = []; S.planImg = {}; S.closure = {}; S.showClosure = false;
   for (const [path, d] of docs) {
     if (path === root || !d) continue;
+    if (d.type === 'closure') { S.closure[d.id] = d; continue; }
     if (d.type === 'plan') { S.rooms.push(...(d.rooms || [])); S.items.push(...(d.items || [])); S.draws.push(...(d.draws || [])); S.vnotes.push(...(d.vnotes || [])); }
     if (d.type === 'photo') { const { items, type: t, ...ph } = d; if (ph.aiSt === 'queued' || ph.aiSt === 'run') ph.aiSt = 'none'; S.photos.push(ph); S.items.push(...(items || [])); }
   }
@@ -213,7 +214,8 @@ async function importSnapshot(d, getFile, opt = {}) { // backup (JSON/ZIP) o car
   if (mode === 'replace') await dropStaleDocs(d);
   S.sv = { ...d.survey, name: d.survey.name + (mode === 'copy' ? ' (copia)' : ''), updated: Date.now() }; delete S.sv.type; delete S.sv.stats;
   if (mode === 'copy') { delete S.sv.dir; delete S.sv.arch; delete S.sv.cost; }
-  S.rooms = d.rooms || []; S.items = d.items || []; S.draws = d.draws || []; S.vnotes = d.vnotes || [];
+  S.rooms = d.rooms || []; S.items = d.items || []; S.draws = d.draws || []; S.vnotes = d.vnotes || []; S.closure = d.closure || {}; S.showClosure = false;
+  if (!S.sv.closed) S.closure = {};
   S.photos = (d.photos || []).map(p => ({ ...p, aiSt: p.aiSt === 'run' || p.aiSt === 'queued' ? 'none' : p.aiSt }));
   S.planId = S.sv.plans[0]?.id || null; S.undo = []; S.sel = null; S.planImg = {};
   let n = 0, miss = 0;
@@ -230,7 +232,7 @@ async function importSnapshot(d, getFile, opt = {}) { // backup (JSON/ZIP) o car
   for (const p of S.photos) await put('photo_' + p.id, p, 'photo', imgMime);
   for (const v of S.vnotes) if (v.mime) await put('audio_' + v.id, v, 'audio', () => v.mime);
   const root = base() + '/' + S.sv.id; [...Sync.last.keys()].forEach(k => { if (k === root || k.startsWith(root + '/')) Sync.last.delete(k); }); // va riscritto tutto
-  Sync.mark('meta', ...S.sv.plans.map(p => 'plan:' + p.id), ...S.photos.map(p => 'photo:' + p.id));
+  Sync.mark('meta', ...S.sv.plans.map(p => 'plan:' + p.id), ...S.photos.map(p => 'photo:' + p.id), ...Object.keys(S.closure).map(id => 'closure:' + id));
   S.surveys = [S.sv].concat(S.surveys.filter(x => x.id !== S.sv.id));
   await Sync.flush();
   showSurvey(); toast(`Sopralluogo importato${miss ? ` (${miss} file mancanti)` : ''}`, !!miss, 5000);
@@ -255,9 +257,9 @@ async function surveyAssets(sid) { // file già caricati online della versione c
   return m;
 }
 async function dropStaleDocs(d) { // aggiornamento: via i documenti di tavole e foto che nella nuova versione non ci sono più
-  const root = base() + '/' + d.survey.id; const keep = new Set([root, ...(d.survey.plans || []).map(p => root + '/plans/' + p.id), ...(d.photos || []).map(p => root + '/photos/' + p.id)]);
+  const root = base() + '/' + d.survey.id; const keep = new Set([root, ...(d.survey.plans || []).map(p => root + '/plans/' + p.id), ...(d.photos || []).map(p => root + '/photos/' + p.id), ...Object.keys(d.closure || {}).map(id => root + '/closure/' + id)]);
   for (const x of await IDB.all('docs')) if ((x.path === root || x.path.startsWith(root + '/')) && !keep.has(x.path)) { await IDB.del('docs', x.path); if (CAP.db) Sync.del(x.path); }
-  if (CAP.db) { try { for (const col of ['plans', 'photos']) { const sn = await withTimeout(CAP.db.doc(root).collection(col).get(), 15000); sn.docs.forEach(x => { const p = root + '/' + col + '/' + x.id; if (!keep.has(p)) Sync.del(p); }); } } catch (e) { } }
+  if (CAP.db) { try { for (const col of ['plans', 'photos', 'closure']) { const sn = await withTimeout(CAP.db.doc(root).collection(col).get(), 15000); sn.docs.forEach(x => { const p = root + '/' + col + '/' + x.id; if (!keep.has(p)) Sync.del(p); }); } } catch (e) { } }
   const ids = new Set([...(d.survey.plans || []).map(p => p.id), ...(d.photos || []).map(p => p.id), ...(d.vnotes || []).map(n => n.id)]);
   for (const b of await IDB.all('blobs')) if (b.sid === d.survey.id && !ids.has(b.ref)) { await IDB.del('blobs', b.id); Uploads.q.delete(b.id); }
   [...Sync.last.keys()].forEach(k => { if (k === root || k.startsWith(root + '/')) Sync.last.delete(k); });

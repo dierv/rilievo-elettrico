@@ -124,9 +124,10 @@ const stamp = t => { const d = new Date(t || Date.now()); const p = n => String(
 async function snapshotFromIDB(sid) { // sopralluogo chiuso, letto dalla copia sul tablet
   const root = base() + '/' + sid; const docs = (await IDB.all('docs')).filter(d => d.data && (d.path === root || d.path.startsWith(root + '/')));
   const meta = docs.find(d => d.path === root); if (!meta) return null;
-  const { type, stats, ...sv } = meta.data; const o = { app: 'rilievo-elettrico', v: 2, survey: sv, rooms: [], items: [], draws: [], vnotes: [], photos: [] };
+  const { type, stats, ...sv } = meta.data; const o = { app: 'rilievo-elettrico', v: 2, survey: sv, rooms: [], items: [], draws: [], vnotes: [], photos: [], closure: {} };
   for (const d of docs) {
     const x = d.data; if (d.path === root) continue;
+    if (x.type === 'closure') { o.closure[x.id] = x; continue; }
     if (x.type === 'plan') { o.rooms.push(...(x.rooms || [])); o.items.push(...(x.items || [])); o.draws.push(...(x.draws || [])); o.vnotes.push(...(x.vnotes || [])); }
     if (x.type === 'photo') { const { items, type: t, ...ph } = x; o.photos.push(ph); o.items.push(...(items || [])); }
   }

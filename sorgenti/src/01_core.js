@@ -170,7 +170,7 @@ const LEG_PPM = () => ST().symPx / 0.38; // px sullo schermo per metro di simbol
 /* ============ STATO ============ */
 const S = {
   lib: { symbols: DEFAULT_SYMBOLS.map(s => ({ ...s })), settings: { ...DEFAULT_SETTINGS }, legV: LEGENDA.v },
-  surveys: [], sv: null, rooms: [], items: [], photos: [], draws: [], vnotes: [], planId: null, pen: { col: '#dc2626', w: 3 },
+  surveys: [], sv: null, rooms: [], items: [], photos: [], draws: [], vnotes: [], closure: {}, showClosure: false, planId: null, pen: { col: '#dc2626', w: 3 },
   sel: null, tool: 'sel', symSel: null, view: { s: 1, tx: 0, ty: 0 }, planImg: {}, undo: [],
 };
 const ST = () => S.lib.settings;
@@ -206,6 +206,7 @@ function pathFor(key) {
   const [k, id] = key.split(':');
   if (k === 'plan') return `${base()}/${sid}/plans/${id}`;
   if (k === 'photo') return `${base()}/${sid}/photos/${id}`;
+  if (k === 'closure') return `${base()}/${sid}/closure/${id}`;
   return null;
 }
 function cleanPhoto(p) {
@@ -224,6 +225,7 @@ function buildDoc(key) {
     const p = photoById(id); if (!p) return null;
     return { type: 'photo', ...cleanPhoto(p), items: S.items.filter(i => i.photoId === id) };
   }
+  if (k === 'closure') return (S.closure && S.closure[id]) || null;
   return null;
 }
 const Sync = {
@@ -233,6 +235,7 @@ const Sync = {
   del(path) { this.dels.add(path); this.schedule(); },
   schedule(ms = 900) { clearTimeout(this.timer); this.timer = setTimeout(() => this.flush(), ms); syncBadge(); },
   async flush() {
+    if (this.paused) { this.again = true; return; } // esportazione dello stato di fatto in corso: i dati in memoria non sono quelli attuali
     if (this.busy) { this.again = true; return; }
     this.busy = true; this.again = false;
     const keys = [...this.dirty]; this.dirty.clear();

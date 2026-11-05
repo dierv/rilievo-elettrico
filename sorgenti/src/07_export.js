@@ -52,7 +52,7 @@ function openComputo() {
 }
 
 /* ---- backup completo: dati + piante + foto + audio in un solo ZIP ---- */
-const surveySnapshot = () => ({ app: 'rilievo-elettrico', v: 2, saved: Date.now(), survey: S.sv, rooms: S.rooms, items: S.items, draws: S.draws, vnotes: S.vnotes, photos: S.photos.map(cleanPhoto), lib: S.lib });
+const surveySnapshot = () => ({ app: 'rilievo-elettrico', v: 2, saved: Date.now(), survey: S.sv, rooms: S.rooms, items: S.items, draws: S.draws, vnotes: S.vnotes, photos: S.photos.map(cleanPhoto), lib: S.lib, closure: S.closure || {} });
 const extOfBlob = (b, d) => ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' })[b && b.type] || d;
 async function fullBackupZip(prog) {
   await needLib('zip'); const zip = new JSZip(); const snap = surveySnapshot(); const files = {}; let miss = 0;
@@ -130,8 +130,9 @@ function buildDxf(P, pnum) {
   const T = P.dxf ? ((x, y) => [P.dxf.minX + x / P.dxf.s, P.dxf.maxY - y / P.dxf.s]) : ((x, y) => { const k = ppm(P); return [x / k, -y / k]; });
   const U = P.dxf ? 1 / P.dxf.u : 1; // unità disegno per metro
   const layers = new Map([['RIL_LOCALI', 8], ['RIL_LOCALI_NOMI', 7], ['RIL_SIGLE', 7], ['RIL_NOTE', 9], ['RIL_FOTO', 140], ['RIL_INDIZI', 40], ['RIL_DISEGNO', 1], ['RIL_NOTE_AUDIO', aciOf(VN_COL)]]);
-  Object.values(CATS).forEach(c => { layers.set(c.layer, c.aci); layers.set(c.layer + '_BOZZE', 211); });
-  const all = S.items.filter(i => i.planId === P.id); const items = all.filter(i => !i.hint); const used = [...new Set(items.filter(i => !i.pts).flatMap(i => isPlate(i) ? plCodes(i).filter(Boolean) : [i.s]))];
+  Object.values(CATS).forEach(c => { layers.set(c.layer, c.aci); layers.set(c.layer + '_BOZZE', 211); if (closedAt()) { layers.set(c.layer + '_PROGETTO', 5); layers.set(c.layer + '_PROGETTO_BOZZE', 211); layers.set(c.layer + '_RIMOSSI', 8); } });
+  const all = S.items.filter(i => i.planId === P.id); const items = all.filter(i => !i.hint).concat(closedAt() && !Sync.paused ? techRemoved(P.id).map(o => ({ ...o, ok: true, _rem: true })) : []); // dopo la chiusura anche gli elementi rimossi, sul loro layer
+  const used = [...new Set(items.filter(i => !i.pts).flatMap(i => isPlate(i) ? plCodes(i).filter(Boolean) : [i.s]))];
   const [x0, y0] = T(0, P.h), [x1, y1] = T(P.w, 0);
   g(0, 'SECTION'); g(2, 'HEADER'); g(9, '$ACADVER'); g(1, 'AC1009'); g(9, '$INSBASE'); g(10, 0); g(20, 0); g(30, 0); g(9, '$EXTMIN'); g(10, Math.min(x0, x1)); g(20, Math.min(y0, y1)); g(30, 0); g(9, '$EXTMAX'); g(10, Math.max(x0, x1)); g(20, Math.max(y0, y1)); g(30, 0); g(0, 'ENDSEC');
   g(0, 'SECTION'); g(2, 'TABLES');
@@ -167,7 +168,7 @@ function buildDxf(P, pnum) {
   }
   const sz = 0.3 * U;
   for (const it of items) {
-    const s = symOf(it.s); const layer = (CATS[s.cat] || CATS.X).layer + (it.ok ? '' : '_BOZZE');
+    const s = symOf(it.s); const layer = (CATS[s.cat] || CATS.X).layer + (it._rem ? '_RIMOSSI' : techState(it) ? '_PROGETTO' : '') + (it.ok || it._rem ? '' : '_BOZZE');
     if (it.pts) { pline(layer, it.pts.map(p => T(p[0], p[1])), false); const [mx, my] = T(it.x, it.y); text('RIL_SIGLE', mx, my + 0.1 * U, 0.12 * U, symShort(s) + (famExtra(it) ? ' ' + famExtra(it) : '')); continue; }
     if (isPlate(it)) { // placca: un blocco per ogni frutto, affiancati lungo il muro
       const ph = itemRot(it), k = ppm(P), n = it.pl.length; plCodes(it).forEach((c, i) => { if (!c) return; const s2 = symOf(c); const off = ((n - 1) / 2 - i) * 0.36 * k; /* posto 1 a sinistra di chi guarda la parete */ const [px, py] = T(it.x + Math.cos(-ph) * off, it.y + Math.sin(-ph) * off); g(0, 'INSERT'); g(8, (CATS[s2.cat] || CATS.X).layer + (it.ok ? '' : '_BOZZE')); g(2, blockNameOf(s2)); g(10, px); g(20, py); g(30, 0); g(41, s2.leg ? U : sz); g(42, s2.leg ? U : sz); g(43, s2.leg ? U : sz); g(50, s2.leg ? +(ph * 180 / Math.PI).toFixed(3) : 0); });
@@ -260,7 +261,7 @@ async function annotatedPng(P, pnum) {
 }
 
 /* ---- ZIP ---- */
-async function exportZip(withPhotos, prog) {
+async function exportZip(withPhotos, prog, tag = 'rilievo') {
   await needLib('zip'); const zip = new JSZip(); const sv = S.sv; const pnum = photoNumbers(); const P2 = id => planOf(id)?.name || '';
   const rn = id => roomById(id)?.name || '';
   zip.file('LEGGIMI.txt', `Rilievo elettrico: ${sv.name}\r\nCliente: ${sv.client || ''}\r\nIndirizzo: ${sv.address || ''}\r\nEsportato: ${new Date().toLocaleString('it-IT')}\r\n\r\nDXF: un file per tavola. Layer RIL_* per categoria (RIL_*_BOZZE = bozze AI non confermate), blocchi con i nomi della tua legenda (inseriti in scala 1:1 in metri, ruotati sul muro: se li ridefinisci con la tua libreria si aggiornano tutti), RIL_FOTO = punti di scatto con numero foto, RIL_NOTE_AUDIO = note audio N1… (file nella cartella audio, elenco in csv/note_audio.csv).\r\nSe la tavola era un DXF le coordinate coincidono con l'originale; se era PDF/immagine sono in metri con origine in alto a sinistra (allinea con il comando ALLINEA).\r\nCSV: separatore punto e virgola, apribili con Excel.\r\n`);
@@ -270,8 +271,8 @@ async function exportZip(withPhotos, prog) {
     try { prog && prog('PNG ' + P.name + '…'); zip.file(`pianta/${safeName(P.name)}_rilievo.png`, await annotatedPng(P, pnum)); } catch (e) { console.warn(e); }
     if (P.id !== S.planId) delete S.planImg[P.id];
   }
-  const el = [['N', 'Tavola', 'Locale', 'Sigla', 'Descrizione', 'Caratteristiche', 'Categoria', 'Quantità', 'UM', 'Stato', 'Altezza_m', 'Scritta', 'Note', 'Foto', 'Affidabilità_%', 'Posizione_stimata', 'X_m', 'Y_m']];
-  S.items.filter(i => !i.hint).forEach((it, i) => { const s = symOf(it.s); const P = planOf(it.planId); const k = ppm(P); el.push([i + 1, P2(it.planId), rn(it.roomId), isPlate(it) ? 'PLACCA' : s.code, isPlate(it) ? 'Placca ' + it.pl.length + ' posti' : s.name, isPlate(it) ? plDesc(it) : famExtra(it), CATS[s.cat]?.n || '', itNum(qtyOf(it), umOf(it.s) === 'm' ? 2 : 0), umOf(it.s), it.ok ? 'confermato' : 'bozza AI', itNum(it.h, 2), it.tag || '', it.note || '', it.photoId ? pnum.get(it.photoId) : '', it.conf != null ? Math.round(it.conf * 100) : '', it.est ? 'sì' : '', itNum(it.x / k, 2), itNum(-it.y / k, 2)]); });
+  const el = [['N', 'Tavola', 'Locale', 'Sigla', 'Descrizione', 'Caratteristiche', 'Categoria', 'Quantità', 'UM', 'Stato', 'Scelta_tecnica', 'Altezza_m', 'Scritta', 'Note', 'Foto', 'Affidabilità_%', 'Posizione_stimata', 'X_m', 'Y_m']];
+  S.items.filter(i => !i.hint).forEach((it, i) => { const s = symOf(it.s); const P = planOf(it.planId); const k = ppm(P); el.push([i + 1, P2(it.planId), rn(it.roomId), isPlate(it) ? 'PLACCA' : s.code, isPlate(it) ? 'Placca ' + it.pl.length + ' posti' : s.name, isPlate(it) ? plDesc(it) : famExtra(it), CATS[s.cat]?.n || '', itNum(qtyOf(it), umOf(it.s) === 'm' ? 2 : 0), umOf(it.s), it.ok ? 'confermato' : 'bozza AI', techState(it) || '', itNum(it.h, 2), it.tag || '', it.note || '', it.photoId ? pnum.get(it.photoId) : '', it.conf != null ? Math.round(it.conf * 100) : '', it.est ? 'sì' : '', itNum(it.x / k, 2), itNum(-it.y / k, 2)]); });
   zip.file('csv/elementi.csv', csv(el));
   const hints = S.items.filter(i => i.hint);
   if (hints.length) zip.file('csv/indizi.csv', csv([['N', 'Tavola', 'Locale', 'Indizio', 'Impianto probabile', 'Foto', 'X_m', 'Y_m'], ...hints.map((it, i) => { const k = ppm(planOf(it.planId)); return [i + 1, P2(it.planId), rn(it.roomId), it.note || '', symShort(symOf(it.s)) + ' ' + symOf(it.s).name, it.photoId ? pnum.get(it.photoId) : '', itNum(it.x / k, 2), itNum(-it.y / k, 2)]; })]));
@@ -297,5 +298,5 @@ async function exportZip(withPhotos, prog) {
   }
   prog && prog('Comprimo…');
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 5 } });
-  await saveFile(`rilievo_${safeName(sv.name)}_${new Date().toISOString().slice(0, 10)}.zip`, blob);
+  await saveFile(`${tag}_${safeName(sv.name)}_${new Date().toISOString().slice(0, 10)}.zip`, blob);
 }

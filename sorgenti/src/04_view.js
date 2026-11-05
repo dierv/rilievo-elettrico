@@ -102,13 +102,13 @@ function draw() {
   // stanze
   const ed = editingRoom();
   for (const r of roomsOfPlan(P.id)) {
-    const sel = S.sel && S.sel.t === 'room' && S.sel.id === r.id;
+    const sel = S.sel && S.sel.t === 'room' && S.sel.id === r.id; const st = roomState(r); const [fillC, strokeC, textC] = ROOM_COL[st];
     x.beginPath(); r.poly.forEach((p, i) => { const [sx, sy] = toS(p[0], p[1]); i ? x.lineTo(sx, sy) : x.moveTo(sx, sy); }); x.closePath();
-    x.fillStyle = r.done ? 'rgba(22,163,74,.12)' : sel ? 'rgba(29,78,216,.10)' : 'rgba(59,130,246,.06)'; x.fill();
-    x.lineWidth = sel ? 3 : 2; x.strokeStyle = sel ? '#1d4ed8' : r.done ? 'rgba(22,163,74,.85)' : 'rgba(37,99,235,.75)'; x.stroke();
+    x.fillStyle = sel && st === 'ok' ? 'rgba(29,78,216,.10)' : fillC; x.fill();
+    x.lineWidth = sel ? 3 : 2; x.strokeStyle = sel ? '#1d4ed8' : strokeC; x.stroke();
     const [cx, cy] = toS(...polyCentroid(r.poly));
     x.font = '600 13px sans-serif'; x.textAlign = 'center'; x.lineWidth = 3.5; x.strokeStyle = 'rgba(255,255,255,.9)';
-    const lbl = (r.done ? '✓ ' : '') + r.name; x.strokeText(lbl, cx, cy); x.fillStyle = r.done ? '#166534' : '#1e3a8a'; x.fillText(lbl, cx, cy);
+    const lbl = (st === 'done' ? '✓ ' : st === 'warn' ? '! ' : '') + r.name; x.strokeText(lbl, cx, cy); x.fillStyle = textC; x.fillText(lbl, cx, cy);
   }
   if (ed) { // maniglie per modificare il contorno
     ed.poly.forEach((p, i) => {
@@ -153,6 +153,7 @@ function draw() {
   if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false);
   // elementi
   const R = ST().symPx / 2;
+  if (S.showClosure && closedAt()) drawClosureGhosts(x, P, R);
   const its = S.items.filter(i => i.planId === P.id && itemVisible(i));
   for (const it of its) {
     if (!it.pts) continue; const sym = symOf(it.s); const sel = S.sel && S.sel.t === 'item' && S.sel.id === it.id;
@@ -176,6 +177,7 @@ function draw() {
     if (it.hint) { drawHint(x, sx, sy, R); continue; }
     if (!it.ok) { x.beginPath(); x.arc(sx, sy, R + 4, 0, 7); x.fillStyle = 'rgba(124,58,237,.16)'; x.fill(); }
     if (isPlate(it)) drawPlate(x, it, sx, sy, R, !it.ok, itemRot(it)); else drawSym(x, sym, sx, sy, R, !it.ok, itemRot(it));
+    if (closedAt() && ST().tech !== false) { const t = techState(it); if (t) drawTechBadge(x, sx, sy, R, t); }
     if (it.tag && !isQuadroCode(it.s)) { x.font = '700 12px sans-serif'; x.textAlign = 'left'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText(it.tag, sx + R + 3, sy + R + 2); x.fillStyle = symColor(sym); x.fillText(it.tag, sx + R + 3, sy + R + 2); }
     if (it.n > 1) { x.font = 'bold 11px sans-serif'; x.textAlign = 'left'; x.fillStyle = '#111'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText('×' + it.n, sx + R * .7, sy + R + 2); x.fillText('×' + it.n, sx + R * .7, sy + R + 2); }
     const isQ = isQuadroCode(it.s);

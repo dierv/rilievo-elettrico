@@ -47,16 +47,18 @@ function renderPanel() {
   const dr = its.filter(i => !i.ok).length;
   el.innerHTML = `<h2>${esc(P.name)}</h2>
     <div class="row wrap" style="gap:6px">${P.ppm ? `<span class="chip ok">Scala ok</span>` : `<span class="chip warn">Scala da calibrare</span>`}
-      <span class="chip grey">${rooms.length} locali (${rooms.filter(r => r.done).length} fatti)</span><span class="chip grey">${phs.length} foto</span>${(() => { const nv = S.vnotes.filter(n => n.planId === P.id).length; return nv ? `<span class="chip grey">🎙 ${nv} not${nv === 1 ? 'a' : 'e'}</span>` : ''; })()}<span class="chip grey">${its.length} elementi</span>${dr ? `<span class="chip ai">${dr} bozze AI</span>` : ''}${nh ? `<span class="chip warn">⚠ ${nh} indizi</span>` : ''}</div>
+      <span class="chip grey">${rooms.length} locali (${rooms.filter(r => r.done).length} fatti)</span>${(() => { const nw = rooms.filter(r => roomState(r) === 'warn').length; return nw ? `<span class="chip warn">🟠 ${nw} da verificare</span>` : ''; })()}<span class="chip grey">${phs.length} foto</span>${(() => { const nv = S.vnotes.filter(n => n.planId === P.id).length; return nv ? `<span class="chip grey">🎙 ${nv} not${nv === 1 ? 'a' : 'e'}</span>` : ''; })()}<span class="chip grey">${its.length} elementi</span>${dr ? `<span class="chip ai">${dr} bozze AI</span>` : ''}${nh ? `<span class="chip warn">⚠ ${nh} indizi</span>` : ''}</div>
     ${aiAvailHtml()}
     ${!P.ppm ? `<button style="width:100%;margin-top:10px" data-act="tool" data-v="cal">Calibra la scala</button>` : ''}
+    ${closureHtml()}
     <div class="sec"><b>Come si usa</b>
       <ol class="small mut" style="padding-left:18px;margin:6px 0">
       <li><b>Stanza</b>: tocca gli angoli del locale (tieni il dito per la lente) e chiudi sul primo punto.</li>
       <li><b>Foto</b>: tocca dentro la stanza dove sei, trascina verso dove guardi, scatta. L'AI mette i simboli sulle pareti della stanza, in bozza (viola).</li>
       <li>Controlla, sposta, <b>conferma</b>. Segna il locale come rilevato.</li>
+      <li>Colori dei locali: ${ROOM_LEGEND}. Nel pannello del locale vedi che cosa manca.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li></ol></div>
-    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${r.done ? '✅' : '⬜'}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}</div></div>
+    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}</div></div>
     <div class="sec"><b>Visualizza</b>
       <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
@@ -66,7 +68,8 @@ function renderPanel() {
 function roomPanel(el, r) {
   const all = S.items.filter(i => i.roomId === r.id); const its = all.filter(i => !i.hint); const hints = all.filter(i => i.hint); const phs = S.photos.filter(p => p.roomId === r.id); const dr = its.filter(i => !i.ok).length;
   const crit = phs.flatMap(p => (p.ai && p.ai.crit) || []);
-  el.innerHTML = `<h2>${r.done ? '✅' : '⬜'} ${esc(r.name)}</h2>
+  el.innerHTML = `<h2>${ROOM_DOT[roomState(r)]} ${esc(r.name)}</h2>
+    <div class="sec" style="margin-top:4px"><b>Da verificare</b>${issuesHtml(r)}</div>
     <label class="f">Nome</label><input data-rf="name" value="${esc(r.name)}" list="dlRooms"><datalist id="dlRooms">${ROOM_NAMES.map(n => `<option value="${n}">`).join('')}</datalist>
     <div class="row"><div><label class="f">Tipo</label><select data-rf="kind">${ROOM_KINDS.map(k => `<option${k === r.kind ? ' selected' : ''} value="${k}">${k || '—'}</option>`).join('')}</select></div>
     <div style="flex:.6"><label class="f">Altezza (m)</label><input data-rf="h" type="number" step="0.05" inputmode="decimal" value="${r.h ?? ''}"></div></div>
@@ -134,7 +137,7 @@ function itemPanel(el, it) {
   }
   const srcs = itemSources(it); const pn = photoNumbers(); const isQ = isQuadroCode(it.s);
   const from = ph ? roomById(ph.roomId) : null;
-  el.innerHTML = `<h2><img src="${symIcon(s, 48)}" width="26"> ${esc(isQ ? quadroLabel(it) : isPlate(it) ? 'Placca ' + it.pl.length + ' posti' : symShort(s))} ${it.ok ? '<span class="chip ok">Confermato</span>' : '<span class="chip ai">Bozza AI</span>'}</h2>
+  el.innerHTML = `<h2><img src="${symIcon(s, 48)}" width="26"> ${esc(isQ ? quadroLabel(it) : isPlate(it) ? 'Placca ' + it.pl.length + ' posti' : symShort(s))} ${it.ok ? '<span class="chip ok">Confermato</span>' : '<span class="chip ai">Bozza AI</span>'} ${techChip(it)}</h2>
     ${famFieldsHtml(it)}
     <div class="row"><div><label class="f">Quantità</label><div class="row"><button class="sm" style="flex:none" data-act="nMinus">−</button><input data-if="n" type="number" min="1" value="${it.n || 1}" style="text-align:center"><button class="sm" style="flex:none" data-act="nPlus">+</button></div></div>
     <div><label class="f">Altezza (m)</label><input data-if="h" type="number" step="0.05" inputmode="decimal" value="${it.h ?? ''}"></div></div>
@@ -172,7 +175,13 @@ function initPanel() {
       case 'manUndo': (S.tmp.poly || []).pop(); renderPanel(); redraw(); break;
       case 'manDone': finishRoom(); break;
       case 'manCancel': setTool('sel'); break;
-      case 'roomDone': rm.done = !rm.done; Sync.mark('plan:' + rm.planId); renderPanel(); redraw(); break;
+      case 'genCheck': openGeneralCheck(); break;
+      case 'showClosure': S.showClosure = !!b.checked; redraw(); break;
+      case 'reopen': await reopenSurvey(); break;
+      case 'expClosure': { b.disabled = true; try { await withClosureData(() => exportZip(false, m => b.textContent = m, 'stato_di_fatto')); } catch (err) { console.error(err); toast('Errore export: ' + (err.message || err), true, 6000); } b.disabled = false; b.textContent = 'Esporta stato di fatto'; break; }
+      case 'roomDone': { // se manca qualcosa lo dice prima di segnare il locale come rilevato
+        if (!rm.done) { const w = roomIssues(rm).filter(i => i.lvl === 'warn'); if (w.length) { const a = await askChoice('In questo locale manca qualcosa', [['no', 'Torna al locale'], ['si', 'Segna rilevato lo stesso']], w.map(i => i.t).join(' • ')); if (a !== 'si') break; } }
+        rm.done = !rm.done; Sync.mark('plan:' + rm.planId); renderPanel(); redraw(); break; }
       case 'confirmRoom': pushUndo(); S.items.filter(i => i.roomId === rm.id && !i.ok && !i.hint).forEach(i => { i.ok = true; Sync.markItem(i); }); renderPanel(); redraw(); break;
       case 'dedupe': { const n = dedupeRoom(rm); toast(n ? `Rimossi ${n} doppioni` : 'Nessun doppione trovato'); renderPanel(); redraw(); break; }
       case 'redrawMan': setTool('room'); S.redrawRoom = rm.id; renderPanel(); break;
