@@ -34,6 +34,14 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 - Se tablet e penna lo supportano, avvicinando la penna allo schermo compare il mirino dove cadrà il punto.
 - Si disattiva in **Impostazioni**.
 
+## Durante il sopralluogo
+- **Colore dei locali**: arancione = manca qualcosa (nessuna foto, nessun punto luce, nessun elemento), blu = in lavorazione, verde = rilevato. Nel pannello del locale c'è l'elenco di cosa manca.
+- **Controllo generale** (nel pannello della tavola): elenco dei locali da verificare e foto ancora da analizzare; con doppia conferma **chiude il sopralluogo** e fotografa lo *stato di fatto*. Da lì in poi ogni modifica è una *scelta tecnica*: compare con un distintivo sulla pianta, nel CSV (colonna `Scelta_tecnica`) e nel DXF su layer con suffisso `_PROGETTO` (gli elementi tolti dopo la chiusura finiscono su `_RIMOSSI`); lo stato di fatto chiuso resta sempre consultabile ed esportabile.
+- **Destino** di ogni elemento: *da rimuovere*, *da sostituire*, *nuovo*. Si sceglie dal pannello dell'elemento; va nel CSV (colonna `Destino`) e nel DXF su layer con suffisso `_RIMUOVERE`, `_SOSTITUIRE`, `_NUOVO`.
+- **Barra dei simboli più usati** sotto la pianta (grafica + descrizione), con **timbro** per mettere più volte lo stesso simbolo.
+- **Misura**: con la scala impostata tocca due o più punti (si agganciano agli angoli dei locali): distanza per tratto, totale, e area/perimetro se chiudi il poligono.
+- **Pianta che segue come sei girato**: tasto bussola in basso a destra (o due dita che torcono) per girare la pianta come sei messo tu; **Segui bussola** la fa ruotare da sola quando ti giri e, nel tool Foto, un tocco crea la foto verso la parete che hai davanti. Serve il permesso ai sensori di movimento del browser (su iPhone/iPad lo chiede la prima volta); dentro Claude i sensori possono essere bloccati, nell'app installata funzionano.
+
 ## Riconoscimento AI
 - Funziona con una chiave API Anthropic, da inserire in **Impostazioni**. Resta solo sul tablet.
 - Costi indicativi con Sonnet 5.5: circa 2 centesimi di dollaro a foto e circa 10 per la lettura di un quadro.

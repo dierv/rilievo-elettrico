@@ -62,7 +62,8 @@ label.f{display:block;font-size:12.5px;color:var(--mut);margin:10px 0 4px;font-w
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #hint{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(21,24,29,.86);color:#fff;padding:8px 14px;border-radius:99px;font-size:13.5px;pointer-events:none;max-width:92%;text-align:center}
 #zoomBtns{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
-#zoomBtns button{width:44px;height:44px;padding:0;font-size:20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+#zoomBtns button{width:44px;height:44px;padding:0;font-size:20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}#zRot.on{border-color:var(--acc);background:var(--acc2)}#zRotIco{transition:transform .15s}
+#rotPanel{position:absolute;right:62px;bottom:10px;width:min(300px,calc(100% - 80px));background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.16);padding:10px 12px;z-index:4;font-size:13px}#rotPanel input[type=range]{width:100%}
 #aiQ{position:absolute;left:10px;bottom:10px}
 #panel{width:360px;background:#fff;border-left:1px solid var(--line);overflow-y:auto;flex:none;padding:12px 14px 80px}
 #panel h2{font-size:17px;margin:2px 0 8px;display:flex;align-items:center;gap:8px}

@@ -115,7 +115,7 @@ async function openSurvey(id) {
   S.rooms = JSON.parse(JSON.stringify(S.rooms)); S.items = JSON.parse(JSON.stringify(S.items)); S.photos = JSON.parse(JSON.stringify(S.photos)); S.draws = JSON.parse(JSON.stringify(S.draws)); S.vnotes = JSON.parse(JSON.stringify(S.vnotes));
   Sync.last.clear();
   if (remote) { for (const [path] of docs) { const k = keyFromPath(path, root); if (k && k !== 'meta') { const bd = buildDoc(k); if (bd) Sync.last.set(path, JSON.stringify(bd)); } } }
-  S.planId = S.sv.plans.length ? S.sv.plans[0].id : null;
+  S.planId = S.sv.plans.length ? S.sv.plans[0].id : null; S.view.r = 0; if (typeof Compass !== 'undefined' && Compass.on) Compass.stop();
   migrateLegend(); migrateSurvey();
   showSurvey();
   if (dirtyKeys.length || !remote) Sync.mark(...dirtyKeys.filter(Boolean));

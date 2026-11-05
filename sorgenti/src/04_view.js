@@ -1,6 +1,13 @@
 /* ============ DISEGNO ============ */
-const toS = (x, y) => [x * S.view.s + S.view.tx, y * S.view.s + S.view.ty];
-const toB = (sx, sy) => [(sx - S.view.tx) / S.view.s, (sy - S.view.ty) / S.view.s];
+// vista: schermo = Rot(r) · (pianta · s) + t; r in radianti, positivo = pianta ruotata in senso orario sullo schermo
+const vr = () => S.view.r || 0;
+const toS = (x, y) => { const v = S.view, r = v.r || 0; if (!r) return [x * v.s + v.tx, y * v.s + v.ty]; const c = Math.cos(r), sn = Math.sin(r); return [(x * c - y * sn) * v.s + v.tx, (x * sn + y * c) * v.s + v.ty]; };
+const toB = (sx, sy) => { const v = S.view, r = v.r || 0; const dx = (sx - v.tx) / v.s, dy = (sy - v.ty) / v.s; if (!r) return [dx, dy]; const c = Math.cos(r), sn = Math.sin(r); return [dx * c + dy * sn, -dx * sn + dy * c]; };
+function setViewRot(r, keepCenter = true) { // ruota la vista attorno al centro dello schermo
+  const c = $('#cv'); const W = c ? c.clientWidth : 0, H = c ? c.clientHeight : 0; const [bx, by] = toB(W / 2, H / 2);
+  while (r > Math.PI) r -= 2 * Math.PI; while (r < -Math.PI) r += 2 * Math.PI;
+  S.view.r = Math.abs(r) < 1e-4 ? 0 : r; if (keepCenter && c) centerOn(bx, by); rotBtnUpdate(); redraw();
+}
 const symImgs = {};
 function symImage(sym) {
   if (!sym.img) return null;
@@ -55,7 +62,7 @@ function drawPlate(x, it, cx, cy, R, draft, rot) { // frutti affiancati lungo il
   codes.forEach((c, i) => { const off = ((n - 1) / 2 - i) * sp; /* posto 1 a sinistra di chi guarda la parete */ if (c) drawSym(x, symOf(c), cx + ux * off, cy + uy * off, R, draft, rot); else { x.save(); x.translate(cx + ux * off, cy + uy * off); x.rotate(-rot); x.strokeStyle = 'rgba(71,85,105,.6)'; x.beginPath(); x.moveTo(-0.08 * k, -0.25 * k); x.lineTo(0.08 * k, -0.09 * k); x.stroke(); x.restore(); } });
 }
 function plateRight(it, cx, R) { // bordo destro (sullo schermo) del riquadro della placca, per non scriverci sopra
-  const k = R * 2 / 0.38, w = 0.36 * k * it.pl.length, a = -itemRot(it), c = Math.cos(a), s = Math.sin(a);
+  const k = R * 2 / 0.38, w = 0.36 * k * it.pl.length, a = -(itemRot(it) - vr()), c = Math.cos(a), s = Math.sin(a);
   return cx + Math.max(...[[-w / 2, -0.42 * k], [w / 2, -0.42 * k], [-w / 2, 0.08 * k], [w / 2, 0.08 * k]].map(([lx, ly]) => lx * c - ly * s));
 }
 function drawSymFit(x, sym, cx, cy, size) { // simbolo intero dentro un quadrato (legende, elenchi)
@@ -96,7 +103,7 @@ function draw() {
   const P = curPlan(); S.disp = new Map();
   if (!P) { x.fillStyle = '#5d6672'; x.font = '16px sans-serif'; x.textAlign = 'center'; x.fillText('Aggiungi una tavola con "+ Tavola" (PDF, DXF o foto della pianta)', W / 2, H / 2); return; }
   const im = S.planImg[P.id]; const v = S.view;
-  if (im) { x.save(); x.translate(v.tx, v.ty); x.scale(v.s, v.s); x.imageSmoothingEnabled = v.s < 1.5; x.drawImage(im.canvas, 0, 0); x.restore(); }
+  if (im) { x.save(); x.translate(v.tx, v.ty); if (v.r) x.rotate(v.r); x.scale(v.s, v.s); x.imageSmoothingEnabled = v.s < 1.5; x.drawImage(im.canvas, 0, 0); x.restore(); }
   else { x.fillStyle = '#5d6672'; x.font = '15px sans-serif'; x.textAlign = 'center'; x.fillText('Carico la planimetria…', W / 2, H / 2); }
   const k = ppm(P); const mpx = k * v.s; // px schermo per metro
   // stanze
@@ -128,9 +135,9 @@ function draw() {
     if (ph.kind === 'parete') {
       const { tH } = camTan(ph); const half = Math.atan(tH); const Rs = sel ? 120 : 62; const room = roomById(ph.roomId);
       x.beginPath(); x.moveTo(sx, sy);
-      if (ph.len) x.arc(sx, sy, Math.max(4, ph.len * v.s), ph.a - half, ph.a + half);
+      if (ph.len) x.arc(sx, sy, Math.max(4, ph.len * v.s), ph.a + vr() - half, ph.a + vr() + half);
       else if (room && room.poly) { for (let j = 0; j <= 24; j++) { const an = ph.a - half + 2 * half * j / 24; const t = raycast(room.poly, ph.x, ph.y, an) || Rs / v.s; const [qx, qy] = toS(ph.x + Math.cos(an) * t, ph.y + Math.sin(an) * t); x.lineTo(qx, qy); } }
-      else x.arc(sx, sy, Rs, ph.a - half, ph.a + half);
+      else x.arc(sx, sy, Rs, ph.a + vr() - half, ph.a + vr() + half);
       x.closePath();
       x.fillStyle = col + (sel ? '33' : '1f'); x.fill(); x.strokeStyle = col + (sel ? 'dd' : '88'); x.lineWidth = sel ? 2 : 1.2; x.stroke();
       if (sel) { const [hx, hy] = photoHandle(ph); rotHandle(x, hx, hy, col, '↔'); }
@@ -140,9 +147,10 @@ function draw() {
       const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => toS(ph.x + rx * a * tH * d + fx * b * tV * d, ph.y + ry * a * tH * d + fy * b * tV * d));
       x.beginPath(); cs.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath();
       x.fillStyle = col + (sel ? '26' : '14'); x.fill(); x.setLineDash([5, 4]); x.strokeStyle = col + (sel ? 'dd' : '88'); x.lineWidth = sel ? 2 : 1.2; x.stroke(); x.setLineDash([]);
-      const Rs = sel ? 60 : 34; x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + fx * Rs, sy + fy * Rs); x.strokeStyle = col; x.lineWidth = 2.5; x.stroke();
-      x.beginPath(); x.moveTo(sx + fx * Rs, sy + fy * Rs); x.lineTo(sx + fx * (Rs - 9) + rx * 6, sy + fy * (Rs - 9) + ry * 6); x.lineTo(sx + fx * (Rs - 9) - rx * 6, sy + fy * (Rs - 9) - ry * 6); x.closePath(); x.fillStyle = col; x.fill();
-      if (sel) rotHandle(x, sx + fx * 138, sy + fy * 138, col);
+      const Rs = sel ? 60 : 34; const gx = Math.cos(ph.a + vr()), gy = Math.sin(ph.a + vr()), qx = -gy, qy = gx; // freccia sullo schermo
+      x.beginPath(); x.moveTo(sx, sy); x.lineTo(sx + gx * Rs, sy + gy * Rs); x.strokeStyle = col; x.lineWidth = 2.5; x.stroke();
+      x.beginPath(); x.moveTo(sx + gx * Rs, sy + gy * Rs); x.lineTo(sx + gx * (Rs - 9) + qx * 6, sy + gy * (Rs - 9) + qy * 6); x.lineTo(sx + gx * (Rs - 9) - qx * 6, sy + gy * (Rs - 9) - qy * 6); x.closePath(); x.fillStyle = col; x.fill();
+      if (sel) rotHandle(x, sx + gx * 138, sy + gy * 138, col);
     }
     x.beginPath(); x.arc(sx, sy, sel ? 11 : 8, 0, 7); x.fillStyle = '#fff'; x.fill(); x.lineWidth = sel ? 3 : 2; x.strokeStyle = col; x.stroke();
     x.beginPath(); x.arc(sx, sy, 3.2, 0, 7); x.fillStyle = col; x.fill();
@@ -177,7 +185,7 @@ function draw() {
     if (sel) { x.beginPath(); x.arc(sx, sy, R + 9, 0, 7); x.fillStyle = 'rgba(29,78,216,.22)'; x.fill(); }
     if (it.hint) { drawHint(x, sx, sy, R); continue; }
     if (!it.ok) { x.beginPath(); x.arc(sx, sy, R + 4, 0, 7); x.fillStyle = 'rgba(124,58,237,.16)'; x.fill(); }
-    if (isPlate(it)) drawPlate(x, it, sx, sy, R, !it.ok, itemRot(it)); else drawSym(x, sym, sx, sy, R, !it.ok, itemRot(it));
+    if (isPlate(it)) drawPlate(x, it, sx, sy, R, !it.ok, itemRot(it) - vr()); else drawSym(x, sym, sx, sy, R, !it.ok, itemRot(it) - vr());
     if (it.fate) drawFate(x, sx, sy, isPlate(it) ? R * 1.15 : R, it.fate);
     if (closedAt() && ST().tech !== false) { const t = techState(it); if (t) drawTechBadge(x, sx, sy, R, t); }
     if (it.tag && !isQuadroCode(it.s)) { x.font = '700 12px sans-serif'; x.textAlign = 'left'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText(it.tag, sx + R + 3, sy + R + 2); x.fillStyle = symColor(sym); x.fillText(it.tag, sx + R + 3, sy + R + 2); }
@@ -226,7 +234,7 @@ function drawHint(x, cx, cy, R) { // indizio: triangolo ambra con "!"
 }
 function photoHandle(ph) { // maniglia della foto: per le pareti è la punta del cono (direzione e lunghezza)
   const [cx, cy] = toS(ph.x, ph.y); const L = ph.kind === 'parete' && ph.len ? Math.max(70, ph.len * S.view.s) : 138;
-  return [cx + Math.cos(ph.a) * L, cy + Math.sin(ph.a) * L];
+  return [cx + Math.cos(ph.a + vr()) * L, cy + Math.sin(ph.a + vr()) * L];
 }
 function rotHandle(x, hx, hy, col, glyph = '⟳') {
   x.beginPath(); x.arc(hx, hy, 14, 0, 7); x.fillStyle = '#fff'; x.fill(); x.strokeStyle = col; x.lineWidth = 2.5; x.stroke();
@@ -327,7 +335,7 @@ function drawLoupe(x, W, H, P, im, hv) { // lente d'ingrandimento sopra il dito,
   const LR = 74, Z = 4; let lx = S.loupe.sx, ly = S.loupe.sy - 120; if (ly - LR < 4) ly = S.loupe.sy + 120; lx = clamp(lx, LR + 4, W - LR - 4);
   const s = S.view.s * Z;
   x.save(); x.beginPath(); x.arc(lx, ly, LR, 0, 7); x.clip(); x.fillStyle = '#fff'; x.fillRect(lx - LR, ly - LR, 2 * LR, 2 * LR);
-  x.translate(lx, ly); x.scale(s, s); x.translate(-hv.x, -hv.y);
+  x.translate(lx, ly); if (vr()) x.rotate(vr()); x.scale(s, s); x.translate(-hv.x, -hv.y);
   if (im) { x.imageSmoothingEnabled = s < 1.5; x.drawImage(im.canvas, 0, 0); }
   x.lineWidth = 2 / s;
   for (const r of roomsOfPlan(P.id)) { x.beginPath(); r.poly.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.strokeStyle = 'rgba(37,99,235,.8)'; x.stroke(); }
@@ -344,14 +352,15 @@ function drawLoupe(x, W, H, P, im, hv) { // lente d'ingrandimento sopra il dito,
 function fitView() {
   const P = curPlan(); const c = $('#cv'); if (!P || !c) return;
   const W = c.clientWidth, H = c.clientHeight; const im = S.planImg[P.id]; const b = (im && im.cb) || [0, 0, P.w, P.h];
-  const bw = b[2] - b[0], bh = b[3] - b[1]; const s = Math.min((W - 40) / bw, (H - 40) / bh);
-  S.view = { s, tx: (W - bw * s) / 2 - b[0] * s, ty: (H - bh * s) / 2 - b[1] * s }; redraw();
+  const bw = b[2] - b[0], bh = b[3] - b[1]; const r = S.view.r || 0; const ca = Math.abs(Math.cos(r)), sa = Math.abs(Math.sin(r));
+  const ew = bw * ca + bh * sa, eh = bw * sa + bh * ca; const s = Math.min((W - 40) / ew, (H - 40) / eh); // ingombro della pianta ruotata
+  S.view = { s, tx: 0, ty: 0, r }; centerOn((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
 }
 function zoomAt(sx, sy, f) {
   const v = S.view; const ns = clamp(v.s * f, ZMIN, ZMAX); const k = ns / v.s;
   v.tx = sx - (sx - v.tx) * k; v.ty = sy - (sy - v.ty) * k; v.s = ns; redraw();
 }
-function centerOn(bx, by) { const c = $('#cv'); S.view.tx = c.clientWidth / 2 - bx * S.view.s; S.view.ty = c.clientHeight / 2 - by * S.view.s; redraw(); }
+function centerOn(bx, by) { const c = $('#cv'); const v = S.view, r = v.r || 0; const cs = Math.cos(r), sn = Math.sin(r); v.tx = c.clientWidth / 2 - (bx * cs - by * sn) * v.s; v.ty = c.clientHeight / 2 - (bx * sn + by * cs) * v.s; redraw(); }
 
 /* ============ STRUMENTI ============ */
 const ICONS = {
@@ -395,6 +404,7 @@ function setTool(t) {
 function updateHint() {
   let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine';
   const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || '';
+  if (S.tool === 'photo' && Compass.on) h.textContent = 'Bussola attiva: tocca dove ti trovi e il cono parte verso dove guardi (davanti a te = su sullo schermo) • trascina se vuoi dare tu la direzione';
   if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • "Fine timbro" per uscire';
   h.classList.toggle('hide', !curPlan());
   clearTimeout(updateHint.t); updateHint.t = setTimeout(() => { if (S.tool === 'sel') h.classList.add('hide'); }, 5000);
@@ -487,7 +497,7 @@ function initCanvas() {
     if (ptrs.size === 2) {
       if (gest && gest.cancel) gest.cancel();
       const [p1, p2] = [...ptrs.values()];
-      gest = { t: 'pinch', d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), m0: [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2], v0: { ...S.view } };
+      gest = { t: 'pinch', d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), a0: Math.atan2(p2.y - p1.y, p2.x - p1.x), m0: [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2], v0: { ...S.view }, rot: false };
     } else if (ptrs.size === 1) gest = pm && !isPen ? fingerGesture(x, y) : startGesture(x, y);
   });
   c.addEventListener('pointermove', e => {
@@ -496,7 +506,11 @@ function initCanvas() {
     if (gest && gest.t === 'pinch' && ptrs.size >= 2) {
       const [p1, p2] = [...ptrs.values()]; const d = Math.hypot(p1.x - p2.x, p1.y - p2.y); const m = [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2];
       const v0 = gest.v0; const ns = clamp(v0.s * d / Math.max(1, gest.d0), ZMIN, ZMAX); const k = ns / v0.s;
-      S.view.s = ns; S.view.tx = m[0] - (gest.m0[0] - v0.tx) * k; S.view.ty = m[1] - (gest.m0[1] - v0.ty) * k; redraw();
+      let da = Math.atan2(p2.y - p1.y, p2.x - p1.x) - gest.a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+      if (!gest.rot && Math.abs(da) > 0.2 && !Compass.on) gest.rot = true; // torsione decisa: da qui la pianta ruota con le dita
+      if (!gest.rot) da = 0;
+      const cs = Math.cos(da), sn = Math.sin(da); const ox = gest.m0[0] - v0.tx, oy = gest.m0[1] - v0.ty;
+      S.view.s = ns; S.view.r = (v0.r || 0) + da; S.view.tx = m[0] - (ox * cs - oy * sn) * k; S.view.ty = m[1] - (ox * sn + oy * cs) * k; if (gest.rot) rotBtnUpdate(); redraw();
     } else if (gest && gest.move) gest.move(x, y);
   });
   const up = e => {
@@ -507,6 +521,7 @@ function initCanvas() {
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
   c.addEventListener('pointerleave', e => { if (e.pointerType === 'pen' && !ptrs.size) penHoverEnd(); });
   c.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = pos(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+  $('#zRot').onclick = () => toggleRotPanel();
   $('#zIn').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1.5);
   $('#zOut').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1 / 1.5);
   $('#zFit').onclick = fitView;
@@ -604,7 +619,8 @@ function startGesture(x0, y0) {
       move(x, y) { if (Math.hypot(x - x0, y - y0) > 14) moved = true; if (moved) { const [b2x, b2y] = toB(x, y); Object.assign(S.tmp.cam, { a: Math.atan2(b2y - by, b2x - bx), len: Math.hypot(b2x - bx, b2y - by), pt: false }); redraw(); } },
       up(x, y, cancel) {
         if (cancel) { S.tmp = {}; redraw(); return; } const c = S.tmp.cam;
-        openPhotoSheet(moved ? { x: c.x, y: c.y, a: c.a, len: r1(c.len), kind: 'parete' } : { x: c.x, y: c.y, a: -Math.PI / 2, kind: 'soffitto' });
+        if (!moved && Compass.on) openPhotoSheet({ x: c.x, y: c.y, a: screenUpAngle(), len: 0, kind: 'parete', compass: true }); // bussola: guardi avanti a te
+        else openPhotoSheet(moved ? { x: c.x, y: c.y, a: c.a, len: r1(c.len), kind: 'parete' } : { x: c.x, y: c.y, a: -Math.PI / 2, kind: 'soffitto' });
       },
       cancel() { S.tmp = {}; redraw(); },
     };

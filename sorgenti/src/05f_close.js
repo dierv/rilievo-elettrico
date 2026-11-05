@@ -79,7 +79,7 @@ function drawClosureGhosts(x, P, R) { // stato di fatto in grigio sotto gli elem
     if (o.hint) continue; const it = cur.get(o.id); const same = it && Math.hypot(o.x - it.x, o.y - it.y) <= 0.15 * k && o.s === it.s && plKey(o) === plKey(it); if (same) continue; // invariato: è già disegnato
     if (o.pts) { x.beginPath(); o.pts.forEach((p, i) => { const [a, b] = toS(p[0], p[1]); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.strokeStyle = '#64748b'; x.lineWidth = 3; x.setLineDash([6, 4]); x.stroke(); x.setLineDash([]); if (!it) { const [a, b] = toS(o.x, o.y); redCross(x, a, b); } continue; }
     const [sx, sy] = toS(o.x, o.y); const sym = symOf(o.s);
-    if (isPlate(o)) drawPlate(x, { ...o, s: o.s }, sx, sy, R, true, itemRot(o)); else drawSym(x, { ...sym, color: '#64748b', dcol: '#64748b' }, sx, sy, R, true, itemRot(o));
+    if (isPlate(o)) drawPlate(x, { ...o, s: o.s }, sx, sy, R, true, itemRot(o) - vr()); else drawSym(x, { ...sym, color: '#64748b', dcol: '#64748b' }, sx, sy, R, true, itemRot(o) - vr());
     if (!it) redCross(x, sx, sy); else { const [tx, ty] = toS(it.x, it.y); x.beginPath(); x.moveTo(sx, sy); x.lineTo(tx, ty); x.strokeStyle = '#1e3a8a'; x.lineWidth = 1.2; x.setLineDash([3, 3]); x.stroke(); x.setLineDash([]); }
   }
   x.restore();

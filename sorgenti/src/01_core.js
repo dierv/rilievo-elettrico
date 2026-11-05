@@ -185,7 +185,7 @@ const LEG_PPM = () => ST().symPx / 0.38; // px sullo schermo per metro di simbol
 const S = {
   lib: { symbols: DEFAULT_SYMBOLS.map(s => ({ ...s })), settings: { ...DEFAULT_SETTINGS }, legV: LEGENDA.v },
   surveys: [], sv: null, rooms: [], items: [], photos: [], draws: [], vnotes: [], closure: {}, showClosure: false, planId: null, pen: { col: '#dc2626', w: 3 },
-  sel: null, tool: 'sel', symSel: null, view: { s: 1, tx: 0, ty: 0 }, planImg: {}, undo: [],
+  sel: null, tool: 'sel', symSel: null, view: { s: 1, tx: 0, ty: 0, r: 0 }, planImg: {}, undo: [],
 };
 const ST = () => S.lib.settings;
 let _symArr = null, _symLen = 0, _symMap = null;
