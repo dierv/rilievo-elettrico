@@ -122,7 +122,7 @@ Se non rientra in nessun simbolo usa "X" e descrivilo nella nota.
 
 COME SCEGLIERE IL SIMBOLO
 - Scegli il simbolo più specifico che la foto permette di confermare. Se dalla foto non si capiscono potenza, IP, lumen o tipo di scatola, usa il simbolo generico della famiglia (es. 0047 punto luce generico a soffitto, 0048 a parete, 0050 faretto, 0051 lampada di emergenza, 0019 scatola di derivazione, 0024 canalina${hasSym('RIL_PLAFONIERA') ? ', RIL_PLAFONIERA plafoniera lineare' : ''}) e scrivi nella nota quello che vedi.
-- Prese: se è chiaramente una 10A usa 0046_PRESA_10A; se non riconosci il tipo con certezza usa 0075a_BIPRESA (di solito sono bipasso 10/16A).
+- Prese italiane con 3 fori in linea: usa 0075a_BIPRESA (bipasso 10/16A). In foto la 10A e la bipasso sembrano uguali: usa 0046_PRESA_10A solo se sul frutto leggi la scritta 10A, e in quel caso scrivi nella nota «scritta 10A».
 - Rivelatori di fumo: usa la serie 0156 / 0157. I simboli NOTIFIER solo se sul dispositivo leggi il marchio Notifier.
 - Climatizzatore split: unità interna e unità esterna sono 0101 (punto alimentazione) con "etichetta" "U.I." oppure "U.E.".
 - Quadro elettrico: QE_VUOTO, con "etichetta" la sigla scritta sul quadro se leggibile (es. QG, Q1).
@@ -132,7 +132,7 @@ REGOLE
 - Includi anche i componenti che vedi attraverso porte o finestre aperte in altri locali, con "oltre_porta": true (verranno messi nel locale giusto e incrociati con le foto di quel locale).
 - Le cose non fisse (lampade da tavolo o da terra, prolunghe, ciabatte, adattatori, elettrodomestici, cavi volanti) NON vanno in "oggetti" ma in "indizi": per ognuna scrivi cosa ti fa pensare (es. "lampada accesa sul comodino: probabile presa nascosta dietro il comodino") e indica il punto dove probabilmente si trova l'impianto nascosto, con il codice probabile.
 - Un oggetto per ogni apparecchio fisico.
-- Placca con 2 o più frutti (comandi, prese, pulsanti, prese dati/TV…): UN SOLO oggetto per tutta la placca, con il bbox di tutta la placca. In "placca" elenca i posti nell'ordine in cui li vedi, da sinistra a destra (dall'alto in basso se la placca è verticale): per ogni posto il codice della legenda del frutto, null per un tappo o un posto vuoto; un frutto largo 2 moduli (es. presa schuko o universale) occupa 2 posti: il suo codice e poi null. "code" = codice del primo frutto, "n" = 1. Esempio, placca 3 posti con interruttore, presa bipasso, interruttore: "placca":["0035_INTERRUTTORE","0075a_BIPRESA","0035_INTERRUTTORE"]. Frutto da solo (anche con tappi accanto): oggetto normale con "placca":null.
+- Placche (comandi, prese, pulsanti, prese dati/TV…): UN SOLO oggetto per ogni placca a 2 o più posti, con il bbox di tutta la placca, ANCHE SE C'È UN SOLO FRUTTO e gli altri posti sono tappi. Prima conta i posti: ogni posto è largo come un interruttore; la classica placca rettangolare orizzontale (scatola 503) ha 3 posti, anche quando due sono tappi bianchi lisci uno accanto all'altro (un tappo è un modulo liscio, senza tasto né fori). In "placca" metti un elemento per ogni posto, da sinistra a destra (dall'alto in basso se la placca è verticale): il codice della legenda del frutto, oppure null per un tappo o un posto vuoto; un frutto largo 2 moduli (es. presa schuko o universale) occupa 2 posti: il suo codice e poi null. "code" = codice del primo frutto, "n" = 1. Esempi di placca 3 posti: interruttore, presa bipasso, interruttore = ["0035_INTERRUTTORE","0075a_BIPRESA","0035_INTERRUTTORE"]; tappo, presa bipasso, tappo = [null,"0075a_BIPRESA",null]; interruttore e due tappi = ["0035_INTERRUTTORE",null,null]. "placca":null solo per un frutto senza placca a più posti (es. presa a giorno, placca da un posto).
 - Corpi illuminanti: un oggetto per apparecchio (in un capannone conta ogni armatura).
 - Quadro elettrico: in "oggetti" mettilo una sola volta, con il bbox di tutto il quadro; il suo contenuto (moduli e interruttori) viene letto a parte su un ingrandimento.
 - Canaline, passerelle, tubi a vista, strisce LED, binari: oggetti lineari; in "linea" metti i punti che seguono tutto il percorso visibile (inizio, ogni cambio di direzione, fine).
@@ -142,10 +142,10 @@ REGOLE
 
 Rispondi SOLO con questo JSON:
 {"descrizione":"max 25 parole su ambiente e stato dell'impianto",
- "oggetti":[{"code":"0046_PRESA_10A","n":1,"bbox":[0.41,0.62,0.47,0.70],"pt":[0.44,0.66],"placca":null,"linea":null,"posa":"parete","oltre_porta":false,"dist_m":2.5,"h_m":0.3,"etichetta":null,"note":"breve: tipo, serie, stato","conf":0.9}],
+ "oggetti":[{"code":"0075a_BIPRESA","n":1,"bbox":[0.39,0.62,0.49,0.69],"pt":[0.44,0.655],"placca":[null,"0075a_BIPRESA",null],"linea":null,"posa":"parete","oltre_porta":false,"dist_m":2.5,"h_m":0.3,"etichetta":null,"note":"breve: tipo, serie, stato","conf":0.9}],
  "indizi":[{"testo":"lampada accesa sul comodino: probabile presa dietro il comodino","code":"0075a_BIPRESA","pt":[0.72,0.80],"posa":"parete","dist_m":2.0,"h_m":0.3,"conf":0.5}],
  "criticita":["anomalie visibili: cavi volanti, scatole senza coperchio, prese danneggiate, protezioni mancanti…"]}
-"pt" = punto di fissaggio; "placca" = posti della placca da sinistra a destra (solo placche con 2 o più frutti), altrimenti null; "linea" = [[x,y],[x,y],…] solo per oggetti lineari, altrimenti null; "etichetta" = breve testo da scrivere accanto al simbolo (U.I., U.E., sigla del quadro), altrimenti null; "posa" = "parete" (fissato a un muro, anche se in alto, es. applique o faretti di un mobile a specchio) | "soffitto" (solo se fissato al soffitto) | "pavimento"; "dist_m" = distanza ORIZZONTALE stimata dal punto di scatto al muro o al punto dove l'oggetto è fissato, in metri (null se non stimabile); "h_m" = altezza da terra stimata in metri (null se non stimabile).`;
+"pt" = punto di fissaggio; "placca" = un elemento per ogni posto della placca da sinistra a destra (codice del frutto, null per tappo o posto vuoto), per ogni placca a 2 o più posti anche con un solo frutto; null solo per un frutto senza placca a più posti; "linea" = [[x,y],[x,y],…] solo per oggetti lineari, altrimenti null; "etichetta" = breve testo da scrivere accanto al simbolo (U.I., U.E., sigla del quadro), altrimenti null; "posa" = "parete" (fissato a un muro, anche se in alto, es. applique o faretti di un mobile a specchio) | "soffitto" (solo se fissato al soffitto) | "pavimento"; "dist_m" = distanza ORIZZONTALE stimata dal punto di scatto al muro o al punto dove l'oggetto è fissato, in metri (null se non stimabile); "h_m" = altezza da terra stimata in metri (null se non stimabile).`;
 }
 function promptQuadro(nImgs = 1) {
   return `Rilievo dell'impianto elettrico esistente. ${nImgs > 1 ? `Ti mando ${nImgs} immagini dello STESSO quadro elettrico: la prima intera, le altre sono ingrandimenti (metà sinistra e metà destra) per leggere meglio le targhette.` : 'Ti mando la foto di un quadro elettrico.'}
@@ -167,11 +167,11 @@ Usa null per ciò che non si legge: non inventare correnti o sensibilità. bbox 
 const n01 = v => (typeof v === 'number' && isFinite(v)) ? clamp(v, 0, 1) : null;
 const arr2 = a => Array.isArray(a) && a.length === 2 && a.every(v => typeof v === 'number') ? a.map(v => clamp(v, 0, 1)) : null;
 const arr4 = a => Array.isArray(a) && a.length === 4 && a.every(v => typeof v === 'number') ? a.map(v => clamp(v, 0, 1)) : null;
-function normPlacca(a) { // ["0035…", "0075a…", null] -> codici della legenda (null = tappo); solo se ci sono almeno 2 frutti
+function normPlacca(a) { // ["0035…", "0075a…", null] -> codici della legenda (null = tappo); basta un frutto (gli altri posti possono essere tappi)
   if (!Array.isArray(a) || a.length < 2) return null;
   let pl = a.slice(0, 12).map(c => c == null || /^\s*(null|none|tappo|vuoto|-)?\s*$/i.test(String(c)) ? null : resolveCode(c) || 'X');
   while (pl.length > 2 && pl[pl.length - 1] == null && pl.length > Math.max(...PL_SIZES)) pl.pop();
-  if (pl.filter(Boolean).length < 2) return null;
+  if (!pl.some(Boolean)) return null;
   pl = pl.slice(0, Math.max(...PL_SIZES)); const N = PL_SIZES.find(n => n >= pl.length) || pl.length; while (pl.length < N) pl.push(null);
   return pl;
 }
@@ -187,6 +187,9 @@ function normRilievo(res) {
     const tag = !ind && d.etichetta != null ? String(d.etichetta).trim().slice(0, 12) : ''; if (tag && !/^(null|none|-)$/i.test(tag)) out.tag = tag;
     if (d.oltre_porta === true) out.oltre = true; if (ind) out.indizio = true;
     const pl = !ind && normPlacca(d.placca); if (pl) { out.pl = pl; out.code = pl.find(Boolean); out.n = 1; }
+    // la 10A solo se l'AI ha letto la scritta sul frutto: da lontano 10A e bipasso sono uguali e di solito è una bipasso
+    const no10 = c => c === '0046_PRESA_10A' && !/scritta\s*["«']?\s*10\s*A/i.test(out.note) && hasSym('0075a_BIPRESA') ? '0075a_BIPRESA' : c;
+    out.code = no10(out.code); if (out.pl) out.pl = out.pl.map(c => c && no10(c));
     return out;
   };
   const dets = list.filter(d => d && typeof d === 'object' && !junkDet({ conf: n01(d.conf), note: d.note, bbox: d.bbox, pt: d.pt })).slice(0, 150).map(d => one(d, false))
