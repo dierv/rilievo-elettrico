@@ -59,7 +59,7 @@ async function runAI(id) {
       const res = await CAP.sample.json(promptRilievo(ph), { images: [blob], modelTier: ST().tier, ...nocache });
       if (!photoById(id)) return;
       ph.ai = normRilievo(res);
-      if (ST().plZoom !== false) { try { await zoomPlates(ph, blob, nocache); } catch (e) { console.warn('ingrandimento placche', e); if (e && e.code === 'rate_limited') toast(AI_ERR.rate_limited, true); } }
+      if (ST().plZoom === true) { try { await zoomPlates(ph, blob, nocache); } catch (e) { console.warn('ingrandimento placche', e); if (e && e.code === 'rate_limited') toast(AI_ERR.rate_limited, true); } }
       if (!photoById(id)) return;
       if (ph.kind === 'parete' || ph.kind === 'soffitto') applyDetections(ph, true);
     }
@@ -105,7 +105,7 @@ Per ogni ingrandimento:
 1. Conta i POSTI della placca, tappi compresi: un posto è largo come un tasto. La placca rettangolare orizzontale classica (scatola 503) ha 3 posti; esistono anche placche da 1, 2, 4, 6 e 7 posti.
 2. Dì cosa c'è in OGNI posto, da sinistra a destra (dall'alto in basso se la placca è verticale):
 - TAPPO (copriforo): modulo liscio e piatto, senza tasto, senza fori, senza simboli, a filo della cornice → null.
-- Tasto di interruttore, deviatore o pulsante: ha una fessura tutto intorno, di solito è un po' sporgente o inclinato (bascula), a volte con spia o simbolo. In foto interruttore, deviatore e invertitore sono uguali: usa 0035_INTERRUTTORE (con spia luminosa 0037_INTERRUTTORE_LUMINOSO; con il simbolo del campanello 0132_CH; con le frecce su/giù per la tapparella 0106_SALI-SCENDI).
+- Tasto di interruttore, deviatore o pulsante: di solito è un po' sporgente o inclinato (bascula), a volte con spia o simbolo. In foto interruttore, deviatore e invertitore sono uguali: usa 0035_INTERRUTTORE (con spia luminosa 0037_INTERRUTTORE_LUMINOSO; con le frecce su/giù per la tapparella 0106_SALI-SCENDI). Pulsante o campanello SOLO se vedi il simbolo del campanello o la scritta: un modulo bianco liscio senza fori, spie o simboli è un tappo (null), mai un pulsante.
 - Presa italiana con 3 fori in linea → 0075a_BIPRESA (0046_PRESA_10A solo se leggi la scritta 10A sul frutto, e in quel caso scrivi «scritta 10A» nella nota).
 - Presa con due fori più il buco tondo grande o le alette laterali (schuko o universale) → è larga 2 posti: il suo codice e poi null.
 - Prese TV, SAT, dati, telefono, USB, termostati, variatori: i codici qui sotto.
@@ -189,7 +189,7 @@ REGOLE
 - Includi anche i componenti che vedi attraverso porte o finestre aperte in altri locali, con "oltre_porta": true (verranno messi nel locale giusto e incrociati con le foto di quel locale).
 - Le cose non fisse (lampade da tavolo o da terra, prolunghe, ciabatte, adattatori, elettrodomestici, cavi volanti) NON vanno in "oggetti" ma in "indizi": per ognuna scrivi cosa ti fa pensare (es. "lampada accesa sul comodino: probabile presa nascosta dietro il comodino") e indica il punto dove probabilmente si trova l'impianto nascosto, con il codice probabile.
 - Un oggetto per ogni apparecchio fisico.
-- Placche (comandi, prese, pulsanti, prese dati/TV…): UN SOLO oggetto per ogni placca a 2 o più posti, con il bbox di tutta la placca, ANCHE SE C'È UN SOLO FRUTTO e gli altri posti sono tappi. Prima conta i posti: ogni posto è largo come un interruttore; la classica placca rettangolare orizzontale (scatola 503) ha 3 posti, anche se ci sono tappi. Un tappo è un modulo bianco liscio e piatto, senza tasto né fori; il tasto di un interruttore ha una fessura tutto intorno: guarda le fessure per capire in che posto è ogni frutto. In "placca" metti un elemento per ogni posto, da sinistra a destra (dall'alto in basso se la placca è verticale): il codice della legenda del frutto, oppure null per un tappo o un posto vuoto; un frutto largo 2 moduli (es. presa schuko o universale) occupa 2 posti: il suo codice e poi null. "code" = codice del primo frutto, "n" = 1. Esempi di placca 3 posti: interruttore, presa bipasso, interruttore = ["0035_INTERRUTTORE","0075a_BIPRESA","0035_INTERRUTTORE"]; tappo, presa bipasso, tappo = [null,"0075a_BIPRESA",null]; tappo, interruttore, tappo = [null,"0035_INTERRUTTORE",null]. "placca":null solo per un frutto senza placca a più posti (es. presa a giorno, placca da un posto).
+- Placche (comandi, prese, pulsanti, prese dati/TV…): UN SOLO oggetto per ogni placca a 2 o più posti, con il bbox di tutta la placca, ANCHE SE C'È UN SOLO FRUTTO e gli altri posti sono tappi. Prima conta i posti: ogni posto è largo come un interruttore; la classica placca rettangolare orizzontale (scatola 503) ha 3 posti, anche quando due sono tappi (un tappo è un modulo liscio, senza tasto né fori). In "placca" metti un elemento per ogni posto, da sinistra a destra (dall'alto in basso se la placca è verticale): il codice della legenda del frutto, oppure null per un tappo o un posto vuoto; un frutto largo 2 moduli (es. presa schuko o universale) occupa 2 posti: il suo codice e poi null. "code" = codice del primo frutto, "n" = 1. Esempi di placca 3 posti: interruttore, presa bipasso, interruttore = ["0035_INTERRUTTORE","0075a_BIPRESA","0035_INTERRUTTORE"]; tappo, presa bipasso, tappo = [null,"0075a_BIPRESA",null]; tappo, interruttore, tappo = [null,"0035_INTERRUTTORE",null]. "placca":null solo per un frutto senza placca a più posti (es. presa a giorno, placca da un posto).
 - Corpi illuminanti: un oggetto per apparecchio (in un capannone conta ogni armatura).
 - Quadro elettrico: in "oggetti" mettilo una sola volta, con il bbox di tutto il quadro; il suo contenuto (moduli e interruttori) viene letto a parte su un ingrandimento.
 - Canaline, passerelle, tubi a vista, strisce LED, binari: oggetti lineari; in "linea" metti i punti che seguono tutto il percorso visibile (inizio, ogni cambio di direzione, fine).
@@ -280,7 +280,7 @@ function applyDetections(ph, fresh) {
     const it = { id: uid('i'), planId: ph.planId, photoId: ph.id, roomId: ph.roomId, s: det.code, x: 0, y: 0, pts: null, d: di, src: 'ai', ok: false, lk: false, n: det.n, h: det.h_m, note: det.note, conf: det.conf, est: false };
     if (det.indizio) it.hint = true; if (det.oltre) it.oltre = true; if (det.tag) it.tag = det.tag; detPlate(it, det);
     placeItem(it, ph); const r = roomAt(ph.planId, it.x, it.y); it.roomId = r ? r.id : ph.roomId;
-    if (fresh && !it.hint && kept.some(o => plKey(o) === plKey(it) && Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k)) return;
+    if (fresh && !it.hint && kept.some(o => Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k && (plKey(o) === plKey(it) || (isPlate(o) && (isPlate(it) || PL_REV[it.s]))))) return; // già confermato lì (anche una placca riletta con posti diversi)
     created.push(it);
   });
   spreadOverlaps(created.filter(i => !i.hint), ph);

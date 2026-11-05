@@ -164,7 +164,7 @@ const OLD2LEG = { L1: '0047_LUCE_SOFFITTO', L2: '0048_LUCE_PARETE', L3: '0050_FA
   Q1: 'QE_VUOTO', Q2: '0019_SCATOLA_DERIVAZIONE', Q3: '0024_CANALINA_POSACAVI', Q4: '0001_KWh', Q5: '0017a_P_EM_1', S1: '0156a_FIRE_AMBIENTE', S2: '0149_SIRENA', S3: '0137a_CITOFONO_P.I.', S4: '0092a_TERMOSTATO', S5: '0126_TVCC',
   U1: '0101_P.TO_ALIMENTAZIONE', U2: '0101_P.TO_ALIMENTAZIONE', U3: '0093_ESTRATTORE' };
 const OLD_TAG = { U1: 'U.I.' };
-const DEFAULT_SETTINGS = { tier: 'default', auto: true, fov: 66, camH: 1.4, roomH: 2.7, ortho: true, symPx: 22, labels: true, cones: true, drafts: true, hints: true, penOnly: true, plZoom: true };
+const DEFAULT_SETTINGS = { tier: 'default', auto: true, fov: 66, camH: 1.4, roomH: 2.7, ortho: true, symPx: 22, labels: true, cones: true, drafts: true, hints: true, penOnly: true, plZoom: false };
 const LEG_PPM = () => ST().symPx / 0.38; // px sullo schermo per metro di simbolo
 
 /* ============ STATO ============ */
