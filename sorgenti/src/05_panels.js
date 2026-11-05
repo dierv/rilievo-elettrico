@@ -7,12 +7,13 @@ const symOptions = cur => Object.entries(CATS).map(([c, cd]) => `<optgroup label
 const imgSrc = ph => blobUrl('photo_' + ph.id, ph.asset) || ph.thumb || '';
 const aiChip = ph => ph.kind === 'dettaglio' ? '<span class="chip grey">Riferimento</span>' : ({ none: '<span class="chip grey">Da analizzare</span>', queued: '<span class="chip warn">In coda</span>', run: '<span class="chip warn">Analisi…</span>', done: '<span class="chip ai">Analizzata</span>', err: '<span class="chip bad">Errore</span>' }[ph.aiSt || 'none']);
 function countsByCode(items) {
-  const m = {}; for (const it of items) { if (it.hint) continue; for (const { k, q } of itemParts(it)) { m[k] = m[k] || { n: 0, dr: 0 }; m[k].n += q; if (!it.ok) m[k].dr += q; } } return m;
+  const m = {}; for (const it of items) { if (it.hint) continue; for (const { k, q } of itemParts(it)) { m[k] = m[k] || { n: 0, dr: 0, f: {} }; m[k].n += q; if (!it.ok) m[k].dr += q; if (it.fate) m[k].f[it.fate] = (m[k].f[it.fate] || 0) + q; } } return m;
 }
 function countsTable(items) {
   const m = countsByCode(items); const keys = Object.keys(m).sort();
   if (!keys.length) return '<div class="mut small">Nessun elemento.</div>';
-  return `<table class="t"><tr><th></th><th>Elemento</th><th class="n">Q.tà</th><th class="n">di cui bozze</th></tr>${keys.map(k => { const s = symOf(kCode(k)); return `<tr><td><img src="${symIcon(s, 40)}" width="20"></td><td>${esc(symShort(s))} ${esc(kName(k))}</td><td class="n"><b>${m[k].n}</b></td><td class="n">${m[k].dr || ''}</td></tr>`; }).join('')}</table>`;
+  const anyF = keys.some(k => Object.keys(m[k].f).length);
+  return `<table class="t"><tr><th></th><th>Elemento</th><th class="n">Q.tà</th><th class="n">di cui bozze</th>${anyF ? '<th>Destino</th>' : ''}</tr>${keys.map(k => { const s = symOf(kCode(k)); return `<tr><td><img src="${symIcon(s, 40)}" width="20"></td><td>${esc(symShort(s))} ${esc(kName(k))}</td><td class="n"><b>${m[k].n}</b></td><td class="n">${m[k].dr || ''}</td>${anyF ? `<td class="small">${Object.entries(m[k].f).map(([f, q]) => `<span style="color:${FATE_COL[f]}">${q} ${fateLabel(f).toLowerCase()}</span>`).join(', ')}</td>` : ''}</tr>`; }).join('')}</table>`;
 }
 function aiAvailHtml() {
   if (PLATFORM === 'pwa' && !CAP.sample) return `<div class="banner warn">Riconoscimento AI spento: inserisci la chiave API in Impostazioni. Puoi comunque rilevare a mano.</div>`;
@@ -57,13 +58,15 @@ function renderPanel() {
       <li><b>Foto</b>: tocca dentro la stanza dove sei, trascina verso dove guardi, scatta. L'AI mette i simboli sulle pareti della stanza, in bozza (viola).</li>
       <li>Controlla, sposta, <b>conferma</b>. Segna il locale come rilevato.</li>
       <li>Colori dei locali: ${ROOM_LEGEND}. Nel pannello del locale vedi che cosa manca.</li>
+      <li><b>Destino</b>: tocca un elemento e scegli <span style="color:#dc2626">da rimuovere</span>, <span style="color:#ea580c">da sostituire</span> o <span style="color:#16a34a">nuovo</span>: compare sulla pianta, nel CSV e su layer DXF separati.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li></ol></div>
     <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}</div></div>
     <div class="sec"><b>Visualizza</b>
       <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="hints" ${ST().hints !== false ? 'checked' : ''}> indizi</label>
-      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="labels" ${ST().labels ? 'checked' : ''}> sigle</label></div></div>`;
+      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="labels" ${ST().labels ? 'checked' : ''}> sigle</label>
+      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="quickBar" ${ST().quickBar !== false ? 'checked' : ''}> barra simboli più usati</label></div></div>`;
 }
 function roomPanel(el, r) {
   const all = S.items.filter(i => i.roomId === r.id); const its = all.filter(i => !i.hint); const hints = all.filter(i => i.hint); const phs = S.photos.filter(p => p.roomId === r.id); const dr = its.filter(i => !i.ok).length;
@@ -138,6 +141,7 @@ function itemPanel(el, it) {
   const srcs = itemSources(it); const pn = photoNumbers(); const isQ = isQuadroCode(it.s);
   const from = ph ? roomById(ph.roomId) : null;
   el.innerHTML = `<h2><img src="${symIcon(s, 48)}" width="26"> ${esc(isQ ? quadroLabel(it) : isPlate(it) ? 'Placca ' + it.pl.length + ' posti' : symShort(s))} ${it.ok ? '<span class="chip ok">Confermato</span>' : '<span class="chip ai">Bozza AI</span>'} ${techChip(it)}</h2>
+    <div class="fates">${FATES.map(([v, l]) => `<button data-act="fate" data-v="${v}" class="${(it.fate || '') === v ? 'on' : ''}" style="${v && (it.fate || '') === v ? `background:${FATE_COL[v]};border-color:${FATE_COL[v]};color:#fff` : ''}">${l}</button>`).join('')}</div>
     ${famFieldsHtml(it)}
     <div class="row"><div><label class="f">Quantità</label><div class="row"><button class="sm" style="flex:none" data-act="nMinus">−</button><input data-if="n" type="number" min="1" value="${it.n || 1}" style="text-align:center"><button class="sm" style="flex:none" data-act="nPlus">+</button></div></div>
     <div><label class="f">Altezza (m)</label><input data-if="h" type="number" step="0.05" inputmode="decimal" value="${it.h ?? ''}"></div></div>
@@ -175,6 +179,7 @@ function initPanel() {
       case 'manUndo': (S.tmp.poly || []).pop(); renderPanel(); redraw(); break;
       case 'manDone': finishRoom(); break;
       case 'manCancel': setTool('sel'); break;
+      case 'fate': if (it) { pushUndo(); if (v) it.fate = v; else delete it.fate; Sync.markItem(it); renderPanel(); redraw(); } break;
       case 'genCheck': openGeneralCheck(); break;
       case 'showClosure': S.showClosure = !!b.checked; redraw(); break;
       case 'reopen': await reopenSurvey(); break;
@@ -216,7 +221,7 @@ function initPanel() {
   });
   el.addEventListener('change', e => {
     const t = e.target; const sel = S.sel;
-    if (t.dataset.set) { ST()[t.dataset.set] = t.checked; Sync.mark('lib'); redraw(); return; }
+    if (t.dataset.set) { ST()[t.dataset.set] = t.checked; Sync.mark('lib'); renderPalette(); redraw(); return; }
     if (t.dataset.vf && sel && sel.t === 'vnote') { const n = vnoteById(sel.id); if (n) { n[t.dataset.vf] = t.value.trim(); Sync.mark('plan:' + n.planId); redraw(); } return; }
     if (t.dataset.rf && sel && sel.t === 'room') { const r = roomById(sel.id); const f = t.dataset.rf; r[f] = f === 'h' ? num(t.value) : t.value; Sync.mark('plan:' + r.planId); if (f === 'h') S.photos.filter(p => p.roomId === r.id).forEach(p => { reprojectPhoto(p); Sync.mark('photo:' + p.id); }); if (f === 'name') renderPanel(); redraw(); return; }
     if (t.dataset.fa && sel && sel.t === 'item') { const it = itemById(sel.id); famSet(it, t.dataset.fa, t.value); renderPanel(); redraw(); return; }
@@ -280,19 +285,32 @@ function renderPenBar(p) {
   p.querySelector('[data-pu]').onclick = () => { const d2 = S.penDraw && drawById(S.penDraw); if (!d2) return; pushUndo(); d2.strokes.pop(); if (!d2.strokes.length) { S.draws = S.draws.filter(x => x !== d2); S.penDraw = null; } Sync.mark('plan:' + d2.planId); renderPalette(); redraw(); };
   p.querySelector('[data-pf]').onclick = () => { const id = S.penDraw; setTool('sel'); if (id && drawById(id)) select('draw', id); };
 }
+const symChip = (s, on) => `<button class="pchip${on ? ' on' : ''}" data-c="${esc(s.code)}" title="${esc(s.code + ' – ' + s.name)}"><img src="${symIcon(s, 48)}"><span><b>${esc(symName2(s))}</b><small>${esc(symShort(s))}</small></span></button>`;
+const symName2 = s => { const n = s.name.split(/[(–]/)[0].trim(); return n.length > 38 ? n.slice(0, 36) + '…' : n; }; // descrizione in primo piano: i codici non si ricordano
 function renderPalette() {
   const p = $('#palette'); if (S.tool === 'pen') { p.classList.remove('hide'); renderPenBar(p); return; }
+  if (S.tool === 'sel' && ST().quickBar !== false && curPlan()) { // barra rapida: i simboli più usati, un tocco e sei già con il simbolo in mano
+    const qs = quickSyms(8); if (!qs.length) { p.classList.add('hide'); return; }
+    p.classList.remove('hide');
+    p.innerHTML = `<span class="pcat">Più usati</span>${qs.map(s => symChip(s, false)).join('')}<button class="sm" data-all="1" style="flex:none">Tutti i simboli…</button>`;
+    p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.symSel = b.dataset.c; setTool('sym'); });
+    p.querySelector('[data-all]').onclick = () => setTool('sym');
+    return;
+  }
   if (S.tool !== 'sym') { p.classList.add('hide'); return; }
   p.classList.remove('hide');
   const ln = S.tmp.line || []; const q = (S.palQ || '').trim().toLowerCase();
   const lineBtns = symOf(S.symSel).mount === 'lineare' ? `<button class="sm okb" data-fin="1" ${ln.length < 2 ? 'disabled' : ''}>Fine (${ln.length})</button><button class="sm" data-clr="1">Annulla</button>` : '';
+  const stampBtn = `<button class="sm${ST().stamp ? ' pri' : ''}" data-stamp="1" style="flex:none" title="Timbro: resta sul simbolo dopo averlo messo, per metterne tanti uguali">${ST().stamp ? '✓ Timbro' : 'Timbro'}</button>` + (ST().stamp ? `<button class="sm" data-stampend="1" style="flex:none">Fine timbro</button>` : '');
   const match = s => !q || q.split(/\s+/).every(w => (s.code + ' ' + s.name).toLowerCase().includes(w));
-  const chip = s => `<button class="pchip${s.code === S.symSel ? ' on' : ''}" data-c="${esc(s.code)}" title="${esc(s.code + ' – ' + s.name)}"><img src="${symIcon(s, 44)}"><span><b>${esc(symShort(s))}</b> ${esc(s.name.split(/[(\/–]/)[0].trim().slice(0, 30))}</span></button>`;
-  const rec = (S.recent || []).filter(c => S.lib.symbols.some(s => s.code === c)).map(symOf);
+  const chip = s => symChip(s, s.code === S.symSel);
+  const top = quickSyms(10);
   let shown = 0;
   const cats = Object.entries(CATS).map(([c, cd]) => { const ss = S.lib.symbols.filter(s => s.cat === c && match(s)).slice(0, q ? 60 : 1000); shown += ss.length; return ss.length ? `<span class="pcat">${esc(cd.n)}</span>` + ss.map(chip).join('') : ''; }).join('');
-  p.innerHTML = `<input id="palQ" class="palq" type="search" placeholder="Cerca simbolo…" value="${esc(S.palQ || '')}">` + lineBtns + (rec.length && !q ? `<span class="pcat">Recenti</span>${rec.map(chip).join('')}` : '') + (shown ? cats : '<span class="mut small" style="padding:0 8px">Nessun simbolo trovato</span>');
+  p.innerHTML = `<input id="palQ" class="palq" type="search" placeholder="Cerca simbolo…" value="${esc(S.palQ || '')}">` + lineBtns + stampBtn + (top.length && !q ? `<span class="pcat">Più usati</span>${top.map(chip).join('')}` : '') + (shown ? cats : '<span class="mut small" style="padding:0 8px">Nessun simbolo trovato</span>');
   p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.symSel = b.dataset.c; S.tmp = {}; renderPalette(); updateHint(); redraw(); });
+  p.querySelector('[data-stamp]').onclick = () => { ST().stamp = !ST().stamp; Sync.mark('lib'); renderPalette(); updateHint(); };
+  const se = p.querySelector('[data-stampend]'); if (se) se.onclick = () => { ST().stamp = false; Sync.mark('lib'); setTool('sel'); };
   const f = p.querySelector('[data-fin]'); if (f) f.onclick = finishLine;
   const cl = p.querySelector('[data-clr]'); if (cl) cl.onclick = () => { S.tmp = {}; renderPalette(); redraw(); };
   const inp = p.querySelector('#palQ'); inp.oninput = () => { S.palQ = inp.value; clearTimeout(S._palT); S._palT = setTimeout(() => { renderPalette(); const i2 = $('#palQ'); if (i2) { i2.focus(); const n = i2.value.length; try { i2.setSelectionRange(n, n); } catch (e) { } } }, 180); };

@@ -88,6 +88,20 @@ const base = () => 'data/users/' + (CAP.uid || 'local');
 const withTimeout = (p, ms = 10000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
 
 /* ============ LIBRERIA SIMBOLI DI DEFAULT ============ */
+// destino dell'elemento: che cosa succede in progetto a quello che c'è (o che va aggiunto)
+const FATES = [['', 'Esistente'], ['rimuovere', 'Da rimuovere'], ['sostituire', 'Da sostituire'], ['nuovo', 'Nuovo']];
+const FATE_COL = { rimuovere: '#dc2626', sostituire: '#ea580c', nuovo: '#16a34a' };
+const FATE_LAYER = { rimuovere: '_RIMUOVERE', sostituire: '_SOSTITUIRE', nuovo: '_NUOVO' };
+// simboli più usati (contati quando li metti a mano): barra rapida e ordine della tavolozza
+function noteSymUse(code) { const st = ST(); const u = st.symUse = st.symUse || {}; u[code] = (u[code] || 0) + 1; S.recent = [code, ...(S.recent || []).filter(c => c !== code)].slice(0, 10); Sync.mark('lib'); }
+function quickSyms(n = 8) {
+  const u = (ST().symUse) || {}; const rec = S.recent || []; const has = c => S.lib.symbols.some(s => s.code === c);
+  const codes = [...new Set([...Object.keys(u), ...rec])].filter(has);
+  codes.sort((a, b) => (u[b] || 0) - (u[a] || 0) || (rec.indexOf(a) < 0 ? 99 : rec.indexOf(a)) - (rec.indexOf(b) < 0 ? 99 : rec.indexOf(b)));
+  return codes.slice(0, n).map(symOf);
+}
+const fateLabel = f => (FATES.find(x => x[0] === (f || '')) || FATES[0])[1];
+const fateShort = f => ({ rimuovere: 'R', sostituire: 'S', nuovo: 'N' })[f] || '';
 const CATS = {
   L: { n: 'Illuminazione', layer: 'RIL_LUCI', aci: 30 },
   C: { n: 'Comandi', layer: 'RIL_COMANDI', aci: 6 },
@@ -164,7 +178,7 @@ const OLD2LEG = { L1: '0047_LUCE_SOFFITTO', L2: '0048_LUCE_PARETE', L3: '0050_FA
   Q1: 'QE_VUOTO', Q2: '0019_SCATOLA_DERIVAZIONE', Q3: '0024_CANALINA_POSACAVI', Q4: '0001_KWh', Q5: '0017a_P_EM_1', S1: '0156a_FIRE_AMBIENTE', S2: '0149_SIRENA', S3: '0137a_CITOFONO_P.I.', S4: '0092a_TERMOSTATO', S5: '0126_TVCC',
   U1: '0101_P.TO_ALIMENTAZIONE', U2: '0101_P.TO_ALIMENTAZIONE', U3: '0093_ESTRATTORE' };
 const OLD_TAG = { U1: 'U.I.' };
-const DEFAULT_SETTINGS = { tier: 'default', auto: true, fov: 66, camH: 1.4, roomH: 2.7, ortho: true, symPx: 22, labels: true, cones: true, drafts: true, hints: true, penOnly: true, plZoom: true };
+const DEFAULT_SETTINGS = { tier: 'default', auto: true, fov: 66, camH: 1.4, roomH: 2.7, ortho: true, symPx: 22, labels: true, cones: true, drafts: true, hints: true, penOnly: true, plZoom: true, quickBar: true, stamp: false };
 const LEG_PPM = () => ST().symPx / 0.38; // px sullo schermo per metro di simbolo
 
 /* ============ STATO ============ */

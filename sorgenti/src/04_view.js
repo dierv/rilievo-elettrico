@@ -161,6 +161,7 @@ function draw() {
     if (sel) { x.strokeStyle = 'rgba(29,78,216,.35)'; x.lineWidth = 12; x.stroke(); }
     x.strokeStyle = symColor(sym); x.lineWidth = 4; x.setLineDash(it.ok ? [] : [8, 5]); x.lineCap = 'round'; x.lineJoin = 'round'; x.stroke(); x.setLineDash([]);
     it.pts.forEach(p => { const [a, b] = toS(p[0], p[1]); x.beginPath(); x.arc(a, b, 3.5, 0, 7); x.fillStyle = symColor(sym); x.fill(); });
+    if (it.fate) { const [a, b] = toS(it.x, it.y); drawFate(x, a, b, 9, it.fate, 2); }
     if (ST().labels && mpx > 28) { const [a, b] = toS(it.x, it.y); const lb = symShort(sym) + (famExtra(it) ? ' ' + famExtra(it) : ''); x.font = '600 11px sans-serif'; x.textAlign = 'center'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText(lb, a, b - 8); x.fillStyle = symColor(sym); x.fillText(lb, a, b - 8); }
   }
   const pts = its.filter(i => !i.pts).map(it => { const [sx, sy] = toS(it.x, it.y); return { id: it.id, x: sx, y: sy, it }; }).filter(p => p.x > -80 && p.y > -80 && p.x < W + 80 && p.y < H + 80);
@@ -177,6 +178,7 @@ function draw() {
     if (it.hint) { drawHint(x, sx, sy, R); continue; }
     if (!it.ok) { x.beginPath(); x.arc(sx, sy, R + 4, 0, 7); x.fillStyle = 'rgba(124,58,237,.16)'; x.fill(); }
     if (isPlate(it)) drawPlate(x, it, sx, sy, R, !it.ok, itemRot(it)); else drawSym(x, sym, sx, sy, R, !it.ok, itemRot(it));
+    if (it.fate) drawFate(x, sx, sy, isPlate(it) ? R * 1.15 : R, it.fate);
     if (closedAt() && ST().tech !== false) { const t = techState(it); if (t) drawTechBadge(x, sx, sy, R, t); }
     if (it.tag && !isQuadroCode(it.s)) { x.font = '700 12px sans-serif'; x.textAlign = 'left'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText(it.tag, sx + R + 3, sy + R + 2); x.fillStyle = symColor(sym); x.fillText(it.tag, sx + R + 3, sy + R + 2); }
     if (it.n > 1) { x.font = 'bold 11px sans-serif'; x.textAlign = 'left'; x.fillStyle = '#111'; x.lineWidth = 3; x.strokeStyle = '#fff'; x.strokeText('×' + it.n, sx + R * .7, sy + R + 2); x.fillText('×' + it.n, sx + R * .7, sy + R + 2); }
@@ -204,10 +206,17 @@ function draw() {
   if (P.ppm) {
     let m = 1; const opts = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]; for (const o of opts) { if (o * mpx > 70) { m = o; break; } m = o; }
     const L = m * mpx; const lab = m < 1 ? Math.round(m * 100) + ' cm' : String(m).replace('.', ',') + ' m';
-    x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(8, H - 34, L + 58, 26); x.fillStyle = '#111'; x.fillRect(14, H - 18, L, 4); x.font = '12px sans-serif'; x.textAlign = 'left'; x.fillText(lab, L + 20, H - 13);
+    const pal = $('#palette'); const pb = pal && !pal.classList.contains('hide') ? pal.offsetHeight : 0;
+    x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(8, H - 34 - pb, L + 58, 26); x.fillStyle = '#111'; x.fillRect(14, H - 18 - pb, L, 4); x.font = '12px sans-serif'; x.textAlign = 'left'; x.fillText(lab, L + 20, H - 13 - pb);
   }
   if (S.loupe && hv) drawLoupe(x, W, H, P, im, hv);
   if (S.photos.some(p => p.aiSt === 'run')) setTimeout(redraw, 60);
+}
+function drawFate(x, cx, cy, R, fate, lw = 2.5) { // anello colorato attorno al simbolo; da rimuovere = anche la croce
+  const col = FATE_COL[fate]; if (!col) return;
+  x.beginPath(); x.arc(cx, cy, R + 3, 0, 7); x.strokeStyle = col; x.lineWidth = lw; x.setLineDash(fate === 'sostituire' ? [5, 3] : []); x.stroke(); x.setLineDash([]);
+  if (fate === 'rimuovere') { const d = R * 0.9; x.beginPath(); x.moveTo(cx - d, cy - d); x.lineTo(cx + d, cy + d); x.moveTo(cx + d, cy - d); x.lineTo(cx - d, cy + d); x.strokeStyle = col; x.lineWidth = lw; x.stroke(); }
+  if (fate === 'nuovo') { x.beginPath(); x.arc(cx + R + 1, cy - R - 1, 6, 0, 7); x.fillStyle = col; x.fill(); x.fillStyle = '#fff'; x.font = '700 10px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('+', cx + R + 1, cy - R - 0.5); x.textBaseline = 'alphabetic'; }
 }
 function drawHint(x, cx, cy, R) { // indizio: triangolo ambra con "!"
   x.save(); x.beginPath(); x.moveTo(cx, cy - R); x.lineTo(cx + R * .98, cy + R * .72); x.lineTo(cx - R * .98, cy + R * .72); x.closePath();
@@ -348,7 +357,9 @@ function setTool(t) {
 }
 function updateHint() {
   let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine';
-  const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || ''; h.classList.toggle('hide', !curPlan());
+  const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || '';
+  if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • "Fine timbro" per uscire';
+  h.classList.toggle('hide', !curPlan());
   clearTimeout(updateHint.t); updateHint.t = setTimeout(() => { if (S.tool === 'sel') h.classList.add('hide'); }, 5000);
 }
 
@@ -621,13 +632,18 @@ function symPlace(bx, by) {
   if (sym.mount === 'parete') { const w = snapToRoomWall(P.id, bx, by, 0.6); if (w) { bx = w.x; by = w.y; } }
   const r = roomAt(P.id, bx, by);
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: sym.code, x: r1(bx), y: r1(by), pts: null, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
-  S.items.push(it); Sync.markItem(it); S.sel = { t: 'item', id: it.id }; S.recent = [sym.code, ...(S.recent || []).filter(c => c !== sym.code)].slice(0, 10); setTool('sel');
+  if (closedAt()) it.fate = 'nuovo'; // dopo la chiusura quello che aggiungi a mano è una nuova installazione
+  S.items.push(it); Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(sym.code); afterPlace();
 }
 function finishLine() {
   const pts = (S.tmp.line || []); if (pts.length < 2) { toast('Servono almeno 2 punti', true); return; }
   const P = curPlan(); pushUndo(); const mid = pts[Math.floor(pts.length / 2)]; const r = roomAt(P.id, mid[0], mid[1]);
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: S.symSel, x: mid[0], y: mid[1], pts, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
-  S.items.push(it); S.tmp = {}; Sync.markItem(it); S.sel = { t: 'item', id: it.id }; S.recent = [S.symSel, ...(S.recent || []).filter(c => c !== S.symSel)].slice(0, 10); setTool('sel');
+  if (closedAt()) it.fate = 'nuovo';
+  S.items.push(it); S.tmp = {}; Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(S.symSel); afterPlace();
+}
+function afterPlace() { // timbro: resta sullo strumento simbolo per metterne un altro uguale; altrimenti torna alla freccia
+  if (ST().stamp) { S.tmp = {}; S.hover = null; S.loupe = null; renderPalette(); updateHint(); renderPanel(); redraw(); } else setTool('sel');
 }
 async function calTap(bx, by) {
   S.tmp.cal = S.tmp.cal || []; S.tmp.cal.push([bx, by]); redraw();
