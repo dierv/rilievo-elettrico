@@ -6,7 +6,11 @@ const toB = (sx, sy) => { const v = S.view, r = v.r || 0; const dx = (sx - v.tx)
 function setViewRot(r, keepCenter = true) { // ruota la vista attorno al centro dello schermo
   const c = $('#cv'); const W = c ? c.clientWidth : 0, H = c ? c.clientHeight : 0; const [bx, by] = toB(W / 2, H / 2);
   while (r > Math.PI) r -= 2 * Math.PI; while (r < -Math.PI) r += 2 * Math.PI;
-  S.view.r = Math.abs(r) < 1e-4 ? 0 : r; if (keepCenter && c) centerOn(bx, by); rotBtnUpdate(); redraw();
+  S.view.r = Math.abs(r) < 1e-4 ? 0 : r; if (keepCenter && c) centerOn(bx, by); rotBtnUpdate(); rotPanelSync(); redraw();
+}
+function rotPanelSync() { // aggiorna gradi e cursore del pannello senza ridisegnarlo (il cursore potrebbe essere sotto il dito)
+  const p = $('#rotPanel'); if (!p || p.classList.contains('hide')) return; const deg = Math.round(vr() * 180 / Math.PI);
+  const sl = p.querySelector('[data-r=slider]'); if (sl && document.activeElement !== sl) sl.value = deg; const d = p.querySelector('[data-deg]'); if (d) d.textContent = deg + '°';
 }
 const symImgs = {};
 function symImage(sym) {
@@ -497,7 +501,7 @@ function initCanvas() {
     if (ptrs.size === 2) {
       if (gest && gest.cancel) gest.cancel();
       const [p1, p2] = [...ptrs.values()];
-      gest = { t: 'pinch', d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), a0: Math.atan2(p2.y - p1.y, p2.x - p1.x), m0: [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2], v0: { ...S.view }, rot: false };
+      gest = { t: 'pinch', d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), a0: Math.atan2(p2.y - p1.y, p2.x - p1.x), m0: [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2], v0: { ...S.view }, rot: false }; Compass.hold = true; // le dita comandano: la bussola aspetta
     } else if (ptrs.size === 1) gest = pm && !isPen ? fingerGesture(x, y) : startGesture(x, y);
   });
   c.addEventListener('pointermove', e => {
@@ -507,7 +511,7 @@ function initCanvas() {
       const [p1, p2] = [...ptrs.values()]; const d = Math.hypot(p1.x - p2.x, p1.y - p2.y); const m = [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2];
       const v0 = gest.v0; const ns = clamp(v0.s * d / Math.max(1, gest.d0), ZMIN, ZMAX); const k = ns / v0.s;
       let da = Math.atan2(p2.y - p1.y, p2.x - p1.x) - gest.a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
-      if (!gest.rot && Math.abs(da) > 0.2 && !Compass.on) gest.rot = true; // torsione decisa: da qui la pianta ruota con le dita
+      if (!gest.rot && Math.abs(da) > 0.2) gest.rot = true; // torsione decisa: da qui la pianta ruota con le dita
       if (!gest.rot) da = 0;
       const cs = Math.cos(da), sn = Math.sin(da); const ox = gest.m0[0] - v0.tx, oy = gest.m0[1] - v0.ty;
       S.view.s = ns; S.view.r = (v0.r || 0) + da; S.view.tx = m[0] - (ox * cs - oy * sn) * k; S.view.ty = m[1] - (ox * sn + oy * cs) * k; if (gest.rot) rotBtnUpdate(); redraw();
@@ -515,7 +519,7 @@ function initCanvas() {
   });
   const up = e => {
     if (!ptrs.has(e.pointerId)) return; const [x, y] = pos(e); ptrs.delete(e.pointerId);
-    if (gest && gest.t === 'pinch') { if (ptrs.size === 0) gest = null; return; }
+    if (gest && gest.t === 'pinch') { if (ptrs.size === 0) { gest = null; Compass.hold = false; Compass.anchor(); rotPanelSync(); } return; }
     if (gest && gest.up && ptrs.size === 0) { const g = gest; gest = null; g.up(x, y, e.type === 'pointercancel'); }
   };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
