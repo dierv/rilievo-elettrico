@@ -59,7 +59,7 @@ async function runAI(id) {
       const res = await CAP.sample.json(promptRilievo(ph), { images: [blob], modelTier: ST().tier, ...nocache });
       if (!photoById(id)) return;
       ph.ai = normRilievo(res);
-      if (ST().plZoom === true) { try { await zoomPlates(ph, blob, nocache); } catch (e) { console.warn('ingrandimento placche', e); if (e && e.code === 'rate_limited') toast(AI_ERR.rate_limited, true); } }
+      if (ST().plZoom !== false) { try { await zoomPlates(ph, blob, nocache); } catch (e) { console.warn('ingrandimento placche', e); if (e && e.code === 'rate_limited') toast(AI_ERR.rate_limited, true); } }
       if (!photoById(id)) return;
       if (ph.kind === 'parete' || ph.kind === 'soffitto') applyDetections(ph, true);
     }
@@ -94,27 +94,28 @@ function plateGroups(dets) { // le rilevazioni da ingrandire, raggruppate quando
   groups.forEach(g => { g.box = unionBox(g.dets.map(d => d.bbox)); });
   return groups.slice(0, 12);
 }
-function promptPlacche(n) {
-  return `Sei un tecnico che esegue il rilievo dell'impianto elettrico esistente. Ricevi ingrandimenti di placche (comandi e prese) ritagliati da una foto di sopralluogo.
+const firstReading = d => d.pl ? `posti ${d.pl.length}: ${d.pl.map(c => c || 'tappo').join(', ')}` : `frutto singolo ${d.code}`;
+function promptPlacche(groups) {
+  const n = groups.length;
+  return `Sei un tecnico che esegue il rilievo dell'impianto elettrico esistente. Ricevi ingrandimenti di placche (comandi e prese) ritagliati da una foto di sopralluogo, con la prima lettura fatta sulla foto intera, da controllare.
 
 CONTESTO
 - Ti mando ${n} ingrandiment${n > 1 ? 'i' : 'o'} presi dalla stessa foto, numerati nell'ordine in cui li ricevi: la placca è al centro, intorno c'è parete o altro.
+${groups.map((g, i) => `- Ingrandimento ${i + 1}, prima lettura: ${firstReading(g.dets[0])}`).join('\n')}
 
 COMPITO
-Per ogni ingrandimento:
-1. Conta i POSTI della placca, tappi compresi: un posto è largo come un tasto. La placca rettangolare orizzontale classica (scatola 503) ha 3 posti; esistono anche placche da 1, 2, 4, 6 e 7 posti.
-2. Dì cosa c'è in OGNI posto, da sinistra a destra (dall'alto in basso se la placca è verticale):
-- TAPPO (copriforo): modulo liscio e piatto, senza tasto, senza fori, senza simboli, a filo della cornice → null.
-- Tasto di interruttore, deviatore o pulsante: di solito è un po' sporgente o inclinato (bascula), a volte con spia o simbolo. In foto interruttore, deviatore e invertitore sono uguali: usa 0035_INTERRUTTORE (con spia luminosa 0037_INTERRUTTORE_LUMINOSO; con le frecce su/giù per la tapparella 0106_SALI-SCENDI). Pulsante o campanello SOLO se vedi il simbolo del campanello o la scritta: un modulo bianco liscio senza fori, spie o simboli è un tappo (null), mai un pulsante.
-- Presa italiana con 3 fori in linea → 0075a_BIPRESA (0046_PRESA_10A solo se leggi la scritta 10A sul frutto, e in quel caso scrivi «scritta 10A» nella nota).
-- Presa con due fori più il buco tondo grande o le alette laterali (schuko o universale) → è larga 2 posti: il suo codice e poi null.
-- Prese TV, SAT, dati, telefono, USB, termostati, variatori: i codici qui sotto.
+Per ogni ingrandimento controlla la prima lettura e correggila SOLO per quello che vedi con certezza nell'ingrandimento:
+1. Il NUMERO DI POSTI, tappi compresi: un posto è largo come un tasto o una presa a 3 fori; una presa rotonda (schuko o universale) è larga 2 posti. La placca rettangolare orizzontale classica (scatola 503) ha 3 posti; esistono anche placche da 1, 2, 4, 6 e 7 posti (2 schuko + 3 bipasso = 7).
+2. Le PRESE, da sinistra a destra (dall'alto in basso se la placca è verticale): presa con 3 fori in linea → 0075a_BIPRESA (0046_PRESA_10A solo se leggi la scritta 10A sul frutto, e allora scrivi «scritta 10A» nella nota); presa con due fori più il buco tondo grande o le alette laterali → 0076_SCHUKO o 0077a_UNIVERSALE, 2 posti: il codice e poi null; prese TV, SAT, dati, telefono, USB: i codici qui sotto.
+3. TASTI e TAPPI: un tappo è un modulo liscio senza fori né simboli, un tasto gli somiglia molto. Se non sei SICURO, lascia per quei posti quello che diceva la prima lettura. Per i tasti usa 0035_INTERRUTTORE (con spia 0037_INTERRUTTORE_LUMINOSO; con le frecce su/giù 0106_SALI-SCENDI). Pulsante o campanello SOLO se vedi il simbolo del campanello o la scritta: mai trasformare un tappo o un tasto in un pulsante.
 Codici della legenda:
 ${symListForAI(['C', 'P'])}
-Se un ingrandimento non è una placca a più posti (es. presa CEE, frutto a giorno, scatola), rispondi "posti":1 con il codice del frutto. Se non riesci a capire, "conf" bassa.
+Se un ingrandimento non è una placca a più posti (es. presa CEE, frutto a giorno, scatola), rispondi "posti":1 con il codice del frutto. Se non riesci a capire, ripeti la prima lettura con "conf" bassa.
 Rispondi SOLO con questo JSON:
-{"placche":[{"img":1,"posti":3,"placca":[null,"0035_INTERRUTTORE",null],"conf":0.8,"note":"breve: cosa vedi in ogni posto"}]}`;
+{"placche":[{"img":1,"posti":3,"placca":[null,"0075a_BIPRESA",null],"conf":0.8,"note":"breve: cosa vedi in ogni posto"}]}`;
 }
+const CMD_OPTS = new Set(['interruttore', 'interruttore_lum', 'deviatore', 'invertitore', 'puls_luce', 'puls_lum', 'puls_campanello', 'puls_cancellino', 'puls_altro', 'tapparella', 'variatore']);
+const flatMod = c => c == null || CMD_OPTS.has(PL_REV[c]); // tappo o tasto: in foto si somigliano
 async function zoomPlates(ph, blob, nocache) { // seconda passata: aggiorna ph.ai.dets prima che diventino oggetti
   const ai = ph.ai; if (!ai || !ai.dets || !ai.dets.length) return;
   const groups = plateGroups(ai.dets); if (!groups.length) return;
@@ -122,14 +123,18 @@ async function zoomPlates(ph, blob, nocache) { // seconda passata: aggiorna ph.a
   for (let i0 = 0; i0 < groups.length && calls < 4; i0 += per, calls++) {
     const part = groups.slice(i0, i0 + per); const imgs = [];
     for (const g of part) imgs.push((await cropBlob(blob, zoomBox(g.box), 1600, 900)).blob);
-    const res = await CAP.sample.json(promptPlacche(imgs.length), { images: imgs, modelTier: ST().tier, ...nocache });
+    const res = await CAP.sample.json(promptPlacche(part), { images: imgs, modelTier: ST().tier, ...nocache });
     const arr = res && Array.isArray(res.placche) ? res.placche : Array.isArray(res) ? res : [];
     part.forEach((g, gi) => {
       const r = arr.find(x => x && parseInt(x.img) === gi + 1) || arr[gi]; if (!r || typeof r !== 'object') return;
       const d = g.dets[0]; const note = String(r.note || '').slice(0, 160);
       const no10 = c => c === '0046_PRESA_10A' && !/scritta\s*["«']?\s*10\s*A/i.test(note) && hasSym('0075a_BIPRESA') ? '0075a_BIPRESA' : c;
       const posti = parseInt(r.posti); let pl = posti === 1 ? null : normPlacca(r.placca, r.posti);
-      if (pl) { pl = pl.map(c => c && no10(c)); d.pl = pl; d.code = pl.find(Boolean); d.n = 1; }
+      if (pl) {
+        pl = pl.map(c => c && no10(c));
+        if (d.pl && d.pl.length === pl.length) pl = pl.map((c, i) => flatMod(d.pl[i]) && flatMod(c) ? d.pl[i] : c); // stesso numero di posti: tasti e tappi restano come nella prima lettura
+        d.pl = pl; d.code = pl.find(Boolean); d.n = 1;
+      }
       else if (posti === 1 && Array.isArray(r.placca) && r.placca.filter(Boolean).length === 1 && resolveCode(r.placca.find(Boolean))) { d.code = no10(resolveCode(r.placca.find(Boolean))); delete d.pl; d.n = 1; }
       else return; // niente di utile: resta la prima lettura
       d.bbox = g.box; d.zoom = true; const c = n01(r.conf); if (c != null) d.conf = c;
@@ -282,7 +287,11 @@ function applyDetections(ph, fresh) {
     const it = { id: uid('i'), planId: ph.planId, photoId: ph.id, roomId: ph.roomId, s: det.code, x: 0, y: 0, pts: null, d: di, src: 'ai', ok: false, lk: false, n: det.n, h: det.h_m, note: det.note, conf: det.conf, est: false };
     if (det.indizio) it.hint = true; if (det.oltre) it.oltre = true; if (det.tag) it.tag = det.tag; detPlate(it, det);
     placeItem(it, ph); const r = roomAt(ph.planId, it.x, it.y); it.roomId = r ? r.id : ph.roomId;
-    if (fresh && !it.hint && kept.some(o => Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k && (plKey(o) === plKey(it) || (isPlate(o) && (isPlate(it) || PL_REV[it.s]))))) return; // già confermato lì (anche una placca riletta con posti diversi)
+    const near = fresh && !it.hint ? kept.find(o => Math.hypot(o.x - it.x, o.y - it.y) < 0.35 * k && (plKey(o) === plKey(it) || ((isPlate(o) || PL_REV[o.s]) && (isPlate(it) || PL_REV[it.s])))) : null;
+    if (near) { // c'è già lì: se è solo spostato (non confermato) prende la nuova lettura tenendo la posizione; se è confermato resta com'è
+      if (!near.ok && near.d == null) { Object.assign(near, { s: it.s, n: it.n, note: it.note, conf: it.conf, d: di }); if (it.h != null) near.h = it.h; if (it.pl) { near.pl = it.pl; near.plInst = it.plInst; } else { delete near.pl; delete near.plInst; } if (it.tag) near.tag = it.tag; else delete near.tag; Sync.markItem(near); }
+      return;
+    }
     created.push(it);
   });
   spreadOverlaps(created.filter(i => !i.hint), ph);

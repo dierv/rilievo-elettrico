@@ -37,7 +37,7 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 ## Riconoscimento AI
 - Funziona con una chiave API Anthropic, da inserire in **Impostazioni**. Resta solo sul tablet.
 - Costi indicativi con Sonnet 5.5: circa 2 centesimi di dollaro a foto e circa 10 per la lettura di un quadro.
-- In Impostazioni c'è il **secondo sguardo alle placche** (sperimentale, spento): ogni placca viene ritagliata, ingrandita e riletta. Costa una richiesta in più per foto e a volte scambia i tappi per tasti.
+- **Secondo sguardo alle placche** (acceso, si spegne in Impostazioni): ogni placca viene ritagliata e ingrandita per contare i posti e riconoscere le prese; tasti e tappi restano come nella prima lettura. Costa circa mezzo centesimo in più per foto con placche.
 - La spesa di ogni sopralluogo compare sulla sua scheda e nel Computo.
 - Senza chiave l'app funziona lo stesso, con rilievo a mano.
 - Le foto fatte offline vengono analizzate al ritorno della rete.
