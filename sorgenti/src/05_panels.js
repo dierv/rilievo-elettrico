@@ -37,6 +37,16 @@ function renderPanel() {
       <button style="width:100%;margin-top:8px" data-act="manCancel">Annulla</button>`;
     return;
   }
+  if (S.tool === 'meas') {
+    const T = S.tmp; const pts = T.meas || []; const k = ppm(P); const inf = measInfo(T, k);
+    el.innerHTML = `<h2>Misura</h2>
+      ${P && !P.ppm ? '<div class="banner warn">Scala non calibrata: le misure sono stimate. Usa prima lo strumento Scala.</div>' : ''}
+      <div class="mut small" style="margin:4px 0 8px">Tocca i punti sulla pianta: la distanza compare su ogni tratto. Vicino agli angoli dei locali il punto si aggancia. Con 3 o più punti, tocca il primo (verde) per chiudere e avere l'area.</div>
+      ${inf.segs.length ? `<table class="t"><tr><th>Tratto</th><th class="n">Lunghezza</th></tr>${inf.segs.map((s, i) => `<tr><td>${i + 1}${T.closed && i === inf.segs.length - 1 ? ' (chiusura)' : ''}</td><td class="n">${fmtM(s)}</td></tr>`).join('')}<tr><td><b>${T.closed ? 'Perimetro' : 'Totale'}</b></td><td class="n"><b>${fmtM(inf.tot)}</b></td></tr>${inf.area != null ? `<tr><td><b>Area</b></td><td class="n"><b>${fmtM2(inf.area)}</b></td></tr>` : ''}</table>` : '<div class="mut small">Nessun punto ancora.</div>'}
+      <div class="row" style="margin-top:12px"><button data-act="measUndo" ${pts.length ? '' : 'disabled'}>Togli ultimo</button><button data-act="measClose" ${pts.length >= 3 && !T.closed ? '' : 'disabled'}>Chiudi (area)</button></div>
+      <div class="row" style="margin-top:8px"><button data-act="measClear" ${pts.length ? '' : 'disabled'}>Nuova misura</button><button class="pri" data-act="tool" data-v="sel">Fine</button></div>`;
+    return;
+  }
   const sel = S.sel;
   if (sel && sel.t === 'item' && itemById(sel.id)) return itemPanel(el, itemById(sel.id));
   if (sel && sel.t === 'photo' && photoById(sel.id)) return photoPanel(el, photoById(sel.id));
@@ -177,6 +187,9 @@ function initPanel() {
       case 'vnRec': case 'vnDl': case 'delVnote': await vnAct(a, sel && sel.t === 'vnote' ? vnoteById(sel.id) : null); break;
       case 'view': openViewer(id); break;
       case 'manUndo': (S.tmp.poly || []).pop(); renderPanel(); redraw(); break;
+      case 'measUndo': if (S.tmp.closed) S.tmp.closed = false; else (S.tmp.meas || []).pop(); renderPanel(); redraw(); break;
+      case 'measClose': if ((S.tmp.meas || []).length >= 3) S.tmp.closed = true; renderPanel(); redraw(); break;
+      case 'measClear': S.tmp.meas = []; S.tmp.closed = false; renderPanel(); redraw(); break;
       case 'manDone': finishRoom(); break;
       case 'manCancel': setTool('sel'); break;
       case 'fate': if (it) { pushUndo(); if (v) it.fate = v; else delete it.fate; Sync.markItem(it); renderPanel(); redraw(); } break;

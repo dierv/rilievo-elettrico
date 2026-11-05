@@ -198,6 +198,7 @@ function draw() {
   }
   if (T.line && T.line.length) { const live = hv && S.tool === 'sym' ? T.line.concat([[hv.x, hv.y]]) : T.line; pl(live, symOf(S.symSel).color, false); T.line.forEach(p => dot(p, symOf(S.symSel).color)); }
   if (T.cal && T.cal.length) { const live = hv && S.tool === 'cal' ? T.cal.concat([[hv.x, hv.y]]) : T.cal; pl(live, '#dc2626', false); T.cal.forEach(p => dot(p, '#dc2626')); }
+  if (T.meas && T.meas.length) drawMeasure(x, T, hv, k);
   if (T.cam) { const [sx, sy] = toS(T.cam.x, T.cam.y); if (T.cam.pt) { x.beginPath(); x.arc(sx, sy, 22, 0, 7); x.fillStyle = 'rgba(29,78,216,.15)'; x.fill(); x.setLineDash([4, 3]); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); x.setLineDash([]); } else { const half = Math.atan(Math.tan(ST().fov * Math.PI / 360) * 0.75); x.beginPath(); x.moveTo(sx, sy); x.arc(sx, sy, Math.max(10, T.cam.len * v.s), T.cam.a - half, T.cam.a + half); x.closePath(); x.fillStyle = 'rgba(29,78,216,.18)'; x.fill(); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); } dot([T.cam.x, T.cam.y], '#1d4ed8'); }
   if (hv && hv.guides) hv.guides.forEach(([a, b]) => { const [ax, ay] = toS(a[0], a[1]), [bx, by] = toS(b[0], b[1]); x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.strokeStyle = 'rgba(220,38,38,.7)'; x.lineWidth = 1.2; x.setLineDash([4, 4]); x.stroke(); x.setLineDash([]); });
   if (hv && hv.pen) { const [a, b] = toS(hv.x, hv.y); x.beginPath(); [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([u, w]) => { x.moveTo(a + u * 5, b + w * 5); x.lineTo(a + u * 16, b + w * 16); }); x.strokeStyle = 'rgba(255,255,255,.9)'; x.lineWidth = 4; x.stroke(); x.strokeStyle = hv.mag ? '#dc2626' : '#0f172a'; x.lineWidth = 1.6; x.stroke(); } // mirino della penna sospesa (con bordo bianco per vederlo sopra la pianta)
@@ -262,8 +263,41 @@ function drawStroke(x, st, sel) {
   if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
   strokePath(x, st.pts, tr, w, st.col);
 }
+/* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
+const MEAS_COL = '#0e7490';
+function measSnap(bx, by) { // aggancio agli angoli dei locali e al primo punto della misura (per chiudere)
+  const P = curPlan(); const tol = 14 / S.view.s; const pts = S.tmp.meas || [];
+  if (pts.length >= 3 && dist(pts[0], [bx, by]) < tol * 1.4) return { x: pts[0][0], y: pts[0][1], mag: 'close' };
+  let best = null, bd = tol;
+  for (const r of roomsOfPlan(P.id)) for (const p of r.poly) { const d = dist(p, [bx, by]); if (d < bd) { bd = d; best = p; } }
+  return best ? { x: best[0], y: best[1], mag: 'pt' } : { x: bx, y: by };
+}
+function measTap(bx, by) {
+  const T = S.tmp; T.meas = T.meas || []; if (T.closed) { T.meas = []; T.closed = false; }
+  if (T.meas.length >= 3 && dist(T.meas[0], [bx, by]) < 1e-6) { T.closed = true; renderPanel(); redraw(); return; }
+  T.meas.push([bx, by]); renderPanel(); redraw();
+}
+const fmtM = m => (m >= 100 ? m.toFixed(1) : m.toFixed(2)).replace('.', ',') + ' m';
+const fmtM2 = a => (a >= 100 ? a.toFixed(1) : a.toFixed(2)).replace('.', ',') + ' m²';
+function measInfo(T, k) { // tratti, totale, area
+  const pts = T.meas || []; const segs = []; for (let i = 1; i < pts.length; i++) segs.push(dist(pts[i - 1], pts[i]) / k);
+  if (T.closed && pts.length >= 3) segs.push(dist(pts[pts.length - 1], pts[0]) / k);
+  return { segs, tot: segs.reduce((a, b) => a + b, 0), area: T.closed && pts.length >= 3 ? Math.abs(polyArea(pts)) / (k * k) : null };
+}
+function drawMeasure(x, T, hv, k) {
+  const pts = T.meas; const live = !T.closed && hv && S.tool === 'meas' ? pts.concat([[hv.x, hv.y]]) : pts;
+  const lbl = (a, b, txt, dy = 0) => { const [ax, ay] = toS(a[0], a[1]), [bx, by] = toS(b[0], b[1]); const mx = (ax + bx) / 2, my = (ay + by) / 2; let an = Math.atan2(by - ay, bx - ax); if (an > Math.PI / 2 || an < -Math.PI / 2) an += Math.PI; x.save(); x.translate(mx, my); x.rotate(an); x.font = '700 12px sans-serif'; x.textAlign = 'center'; x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,.92)'; x.strokeText(txt, 0, -6 + dy); x.fillStyle = MEAS_COL; x.fillText(txt, 0, -6 + dy); x.restore(); };
+  if (T.closed && pts.length >= 3) { x.beginPath(); pts.forEach((p, i) => { const [a, b] = toS(p[0], p[1]); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.closePath(); x.fillStyle = 'rgba(14,116,144,.12)'; x.fill(); }
+  x.beginPath(); live.forEach((p, i) => { const [a, b] = toS(p[0], p[1]); i ? x.lineTo(a, b) : x.moveTo(a, b); }); if (T.closed) x.closePath(); x.strokeStyle = MEAS_COL; x.lineWidth = 2.5; x.setLineDash(T.closed ? [] : [7, 4]); x.stroke(); x.setLineDash([]);
+  for (let i = 1; i < live.length; i++) lbl(live[i - 1], live[i], fmtM(dist(live[i - 1], live[i]) / k));
+  if (T.closed) lbl(live[live.length - 1], live[0], fmtM(dist(live[live.length - 1], live[0]) / k));
+  pts.forEach((p, i) => { const [a, b] = toS(p[0], p[1]); x.beginPath(); x.arc(a, b, i ? 5 : 7, 0, 7); x.fillStyle = i ? MEAS_COL : '#16a34a'; x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 2; x.stroke(); });
+  const inf = measInfo(T, k);
+  if (inf.area != null) { const [cx, cy] = toS(...polyCentroid(pts)); x.font = '700 14px sans-serif'; x.textAlign = 'center'; x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,.92)'; const t1 = fmtM2(inf.area), t2 = 'perimetro ' + fmtM(inf.tot); x.strokeText(t1, cx, cy - 2); x.fillStyle = MEAS_COL; x.fillText(t1, cx, cy - 2); x.font = '600 11px sans-serif'; x.strokeText(t2, cx, cy + 14); x.fillText(t2, cx, cy + 14); }
+  else if (live.length > 2) { const last = live[live.length - 1]; const [a, b] = toS(last[0], last[1]); const t = 'totale ' + fmtM(inf.tot + (live.length > pts.length ? dist(pts[pts.length - 1], last) / k : 0)); x.font = '700 12px sans-serif'; x.textAlign = 'left'; x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,.92)'; x.strokeText(t, a + 10, b + 18); x.fillStyle = MEAS_COL; x.fillText(t, a + 10, b + 18); }
+}
 function penHover(sx, sy) { // penna sospesa sopra lo schermo: mirino dove cadrà il punto
-  const P = curPlan(); if (!P || !['room', 'sym', 'cal', 'vnote'].includes(S.tool)) return;
+  const P = curPlan(); if (!P || !['room', 'sym', 'cal', 'vnote', 'meas'].includes(S.tool)) return;
   if (PEN.hoverRq) return; PEN.hoverRq = requestAnimationFrame(() => {
     PEN.hoverRq = 0; if (ptrs.size) return; const [bx, by] = toB(sx, sy); const f = toolSnap(); S.hover = f ? f(bx, by) : { x: bx, y: by }; S.hover.pen = true; S.loupe = null; redraw();
   });
@@ -278,6 +312,7 @@ function toolSnap() { // come si aggancia il punto per lo strumento attivo (ugua
   const P = curPlan();
   if (S.tool === 'room') { const poly = S.tmp.poly || []; return (bx, by) => snapRoomPoint(bx, by, { prev: poly[poly.length - 1], first: poly.length >= 3 ? poly[0] : null }); }
   if (S.tool === 'sym') { const sym = symOf(S.symSel); return (bx, by) => { if (sym.mount === 'parete' || sym.mount === 'lineare') { const w = snapToRoomWall(P.id, bx, by, sym.mount === 'lineare' ? 0.4 : 0.6); if (w) return { x: w.x, y: w.y, mag: 'wall' }; } return { x: bx, y: by }; }; }
+  if (S.tool === 'meas') return measSnap;
   return null;
 }
 function finishStroke(st) {
@@ -325,10 +360,11 @@ const ICONS = {
   photo: '<path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/>',
   sym: '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8l8 8M16 8l-8 8" stroke="currentColor" stroke-width="2"/>',
   cal: '<path d="M3 16L16 3l5 5L8 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2" stroke="currentColor" stroke-width="2"/>',
+  meas: '<path d="M4 19L19 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="19" r="2.2" fill="currentColor"/><circle cx="19" cy="4" r="2.2" fill="currentColor"/><path d="M9 14l1.5 1.5M12 11l1.5 1.5M15 8l1.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   pen: '<path d="M4 20l1-4L16 5l3 3L8 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 7l3 3" stroke="currentColor" stroke-width="2"/>',
   vnote: '<rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 };
-const TOOLS = [['sel', 'Seleziona'], ['room', 'Stanza'], ['photo', 'Foto'], ['sym', 'Simbolo'], ['pen', 'Penna'], ['vnote', 'Nota audio'], ['cal', 'Scala']];
+const TOOLS = [['sel', 'Seleziona'], ['room', 'Stanza'], ['photo', 'Foto'], ['sym', 'Simbolo'], ['pen', 'Penna'], ['vnote', 'Nota audio'], ['meas', 'Misura'], ['cal', 'Scala']];
 const HINTS = {
   sel: 'Tocca un simbolo, una foto o una stanza • trascina per spostare • due dita per spostare la pianta e zoomare',
   room: 'Tocca gli angoli della stanza uno alla volta (tieni il dito per la lente) • tocca il primo punto per chiudere',
@@ -337,6 +373,7 @@ const HINTS = {
   sym: 'Scegli il simbolo in basso e tocca la pianta (tieni il dito per la lente)',
   symLine: 'Tocca i punti del percorso • "Fine" per chiudere la linea',
   cal: 'Tocca due punti di cui conosci la distanza (es. le estremità di una quota)',
+  meas: 'Misura: tocca due o più punti, la distanza compare su ogni tratto • chiudi sul primo punto per l\'area',
   vnote: 'Tocca il punto della nota (tieni il dito per la lente), poi registra',
 };
 const PEN_HINTS = { // quando si usa la penna
@@ -553,6 +590,7 @@ function startGesture(x0, y0) {
     return pointGesture(x0, y0, toolSnap(), p => symPlace(p.x, p.y));
   }
   if (tool === 'cal') return pointGesture(x0, y0, null, p => calTap(p.x, p.y));
+  if (tool === 'meas') return pointGesture(x0, y0, toolSnap(), p => measTap(p.x, p.y));
   if (tool === 'vnote') return pointGesture(x0, y0, null, p => vnPlace(p.x, p.y));
   if (tool === 'photo') {
     const h = hitTest(x0, y0);
