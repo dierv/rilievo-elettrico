@@ -61,9 +61,9 @@ label.f{display:block;font-size:12.5px;color:var(--mut);margin:10px 0 4px;font-w
 #cwrap{flex:1;position:relative;min-width:0;background:#e3e6ea;overflow:hidden;touch-action:none}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #hint{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(21,24,29,.86);color:#fff;padding:8px 14px;border-radius:99px;font-size:13.5px;pointer-events:none;max-width:92%;text-align:center}
-#zoomBtns{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
+#zoomBtns{position:absolute;right:10px;bottom:calc(var(--palH,0px) + 10px);display:flex;flex-direction:column;gap:6px}
 #zoomBtns button{width:44px;height:44px;padding:0;font-size:20px;box-shadow:0 1px 4px rgba(0,0,0,.12)}#zRot.on{border-color:var(--acc);background:var(--acc2)}#zRotIco{transition:transform .15s}
-#rotPanel{position:absolute;right:62px;bottom:10px;width:min(300px,calc(100% - 80px));background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.16);padding:10px 12px;z-index:4;font-size:13px}#rotPanel input[type=range]{width:100%}
+#rotPanel{position:absolute;right:62px;bottom:calc(var(--palH,0px) + 10px);width:min(300px,calc(100% - 80px));background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.16);padding:10px 12px;z-index:4;font-size:13px}#rotPanel input[type=range]{width:100%}
 #aiQ{position:absolute;left:10px;bottom:10px}
 #panel{width:360px;background:#fff;border-left:1px solid var(--line);overflow-y:auto;flex:none;padding:12px 14px 80px}
 #panel h2{font-size:17px;margin:2px 0 8px;display:flex;align-items:center;gap:8px}
@@ -131,3 +131,19 @@ table.t td.n,table.t th.n{text-align:right}
 .rec{display:flex;align-items:center;gap:10px;margin-top:14px;font-size:22px}
 .recdot{width:16px;height:16px;border-radius:50%;background:#dc2626;animation:recb 1s infinite}
 @keyframes recb{50%{opacity:.25}}
+
+#palette.two{display:block;padding:6px 8px}
+#palette.two .prow{display:flex;gap:6px;overflow-x:auto;align-items:center;position:relative;scrollbar-width:thin}
+#palette.two .ptabs{padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+#palette.two #palStrip{min-height:52px}
+#palette.two .palq{width:240px}
+.ptab{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:6px 13px;border:1px solid var(--line);border-radius:20px;background:#fff;font:inherit;font-size:14px;font-weight:600;white-space:nowrap;color:inherit}
+.ptab i{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
+.ptab.on{border-color:var(--acc);background:var(--acc2);color:var(--acc)}
+.psep{flex:none;width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+.pline{display:inline-flex;gap:6px;margin-left:auto;flex:none;padding-left:8px}
+.pres{display:contents}
+#palette.two .pcat{font-size:12px;padding:0 4px 0 9px;border-left:3px solid currentColor;align-self:stretch;display:flex;align-items:center;flex:none}
+#palette.two .pchip{flex:none;white-space:normal;min-height:54px;padding:4px 8px 4px 6px}
+#palette.two .pchip span{max-width:165px}
+#palette.two .pchip span b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12.5px;line-height:1.15}

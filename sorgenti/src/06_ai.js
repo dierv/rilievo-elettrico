@@ -185,7 +185,7 @@ function promptRilievo(ph) {
   return `Sei un tecnico che esegue il RILIEVO DELL'IMPIANTO ELETTRICO ESISTENTE durante un sopralluogo. Ti mando UNA foto.
 
 CONTESTO
-- Locale: "${room ? room.name : 'non specificato'}"${room && room.kind ? ' (' + room.kind + ')' : ''}, altezza soffitto circa ${H} m.
+${room ? `- Locale: "${room.name}"${room.kind ? ' (' + room.kind + ')' : ''}, altezza soffitto circa ${H} m.` : '- Zona: ESTERNO, fuori dai locali (facciate, cortili, aree esterne); altezze di posa variabili.'}
 - ${ph.kind === 'soffitto' ? `Foto PUNTUALE: tablet puntato verso il soffitto oppure verso il pavimento, a circa ${ST().camH} m da terra; per ogni oggetto indica la posa (soffitto o pavimento).` : `Foto di PARETE/AMBIENTE: tablet tenuto in verticale a circa ${ST().camH} m da terra, inquadratura circa orizzontale.`}
 - Campo visivo orizzontale circa ${hfov} gradi.${room && room.note ? '\n- Note del tecnico sul locale: ' + room.note : ''}
 

@@ -409,7 +409,7 @@ function updateHint() {
   let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine';
   const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || '';
   if (S.tool === 'photo' && Compass.on) h.textContent = 'Bussola attiva: tocca dove ti trovi e il cono parte verso dove guardi (davanti a te = su sullo schermo) • trascina se vuoi dare tu la direzione';
-  if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • "Fine timbro" per uscire';
+  if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • ritocca "Timbro" per finire';
   h.classList.toggle('hide', !curPlan());
   clearTimeout(updateHint.t); updateHint.t = setTimeout(() => { if (S.tool === 'sel') h.classList.add('hide'); }, 5000);
 }
@@ -589,7 +589,7 @@ function startGesture(x0, y0) {
           if (h.t === 'item') {
             o.lk = true;
             if (!o.pts && symOf(o.s).mount === 'parete') { const w = snapToRoomWall(P.id, o.x, o.y, 0.6); if (w) { o.x = r1(w.x); o.y = r1(w.y); } }
-            const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : o.roomId; Sync.markItem(o);
+            const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : null; Sync.markItem(o);
           } else { const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : null; reprojectPhoto(o); Sync.mark('photo:' + o.id); }
           renderPanel(); redraw();
         },
@@ -615,9 +615,7 @@ function startGesture(x0, y0) {
     const h = hitTest(x0, y0);
     if (h && (h.t === 'rot' || h.t === 'photo')) { S.tool = 'sel'; const g = startGesture(x0, y0); S.tool = 'photo'; return g; }
     const [bx, by] = toB(x0, y0);
-    const room = roomAt(P.id, bx, by);
-    if (!room) { toast('Prima disegna la stanza con lo strumento "Stanza" (tocca gli angoli), poi tocca dentro la stanza.', true, 5000); return panGesture(x0, y0); }
-    let moved = false;
+    let moved = false; // anche fuori dai locali: foto esterna, gli elementi vanno negli Esterni
     S.tmp = { cam: { x: bx, y: by, a: -Math.PI / 2, len: 0, pt: true } }; redraw();
     return {
       move(x, y) { if (Math.hypot(x - x0, y - y0) > 14) moved = true; if (moved) { const [b2x, b2y] = toB(x, y); Object.assign(S.tmp.cam, { a: Math.atan2(b2y - by, b2x - bx), len: Math.hypot(b2x - bx, b2y - by), pt: false }); redraw(); } },

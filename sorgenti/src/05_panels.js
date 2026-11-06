@@ -51,6 +51,7 @@ function renderPanel() {
   if (sel && sel.t === 'item' && itemById(sel.id)) return itemPanel(el, itemById(sel.id));
   if (sel && sel.t === 'photo' && photoById(sel.id)) return photoPanel(el, photoById(sel.id));
   if (sel && sel.t === 'room' && roomById(sel.id)) return roomPanel(el, roomById(sel.id));
+  if (sel && sel.t === 'ext' && planOf(sel.id)) return extPanel(el, planOf(sel.id));
   if (sel && sel.t === 'draw' && drawById(sel.id)) return drawPanel(el, drawById(sel.id));
   if (sel && sel.t === 'vnote' && vnoteById(sel.id)) return vnotePanel(el, vnoteById(sel.id));
   if (!P) { el.innerHTML = `<h2>${esc(S.sv.name)}</h2><p class="mut">Carica la prima tavola: PDF, DXF (da AutoCAD), un'immagine, oppure fotografa il disegno cartaceo (lo raddrizzi e metti la scala dal formato del foglio).</p><button class="pri" data-act="addPlan" style="width:100%">+ Aggiungi tavola</button>${aiAvailHtml()}`; return; }
@@ -65,21 +66,41 @@ function renderPanel() {
     <div class="sec"><b>Come si usa</b>
       <ol class="small mut" style="padding-left:18px;margin:6px 0">
       <li><b>Stanza</b>: tocca gli angoli del locale (tieni il dito per la lente) e chiudi sul primo punto.</li>
-      <li><b>Foto</b>: tocca dentro la stanza dove sei, trascina verso dove guardi, scatta. L'AI mette i simboli sulle pareti della stanza, in bozza (viola).</li>
+      <li><b>Foto</b>: tocca dove sei, trascina verso dove guardi, scatta. L'AI mette i simboli sulle pareti della stanza, in bozza (viola). Fuori dai locali (facciate, cortili) foto e simboli vanno negli <b>Esterni</b>.</li>
       <li>Controlla, sposta, <b>conferma</b>. Segna il locale come rilevato.</li>
+      <li><b>Simbolo</b>: in basso, sopra i gruppi (Cerca, Timbro, Più usati, Illuminazione, Forza motrice, Speciali, Distribuzione), sotto i simboli che scorrono di gruppo in gruppo.</li>
       <li>Colori dei locali: ${ROOM_LEGEND}. Nel pannello del locale vedi che cosa manca.</li>
       <li><b>Destino</b>: tocca un elemento e scegli <span style="color:#dc2626">da rimuovere</span>, <span style="color:#ea580c">da sostituire</span> o <span style="color:#16a34a">nuovo</span>: compare sulla pianta, nel CSV e su layer DXF separati.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li>
       <li><b>Tavola da foto</b>: + Tavola → Fotografa il disegno; trascina i 4 cerchi sugli angoli del foglio, scegli formato (A3, A4…) e scala del disegno: la tavola nasce dritta, pulita e in scala.</li>
       <li><b>Misura</b>: tocca due o più punti (si agganciano agli angoli): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li></ol></div>
-    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}</div></div>
+    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div></div>
     <div class="sec"><b>Visualizza</b>
       <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="hints" ${ST().hints !== false ? 'checked' : ''}> indizi</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="labels" ${ST().labels ? 'checked' : ''}> sigle</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="quickBar" ${ST().quickBar !== false ? 'checked' : ''}> barra simboli più usati</label></div></div>`;
+}
+const EXT_ICON = '🌳';
+function extRow(P) { // riga «Esterni» in fondo all'elenco dei locali
+  const n = S.items.filter(i => i.planId === P.id && !roomById(i.roomId) && !i.hint); const nd = n.filter(i => !i.ok).length; const np = S.photos.filter(p => p.planId === P.id && !roomById(p.roomId) && p.x != null).length;
+  return `<div class="drow" data-act="goExt"><span style="font-size:18px">${EXT_ICON}</span><div class="g"><div><b>${EXT_NAME}</b></div><div class="mut small">${n.length || np ? `${np} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}` : 'Fuori dai locali: tocca all\'esterno con Foto o Simbolo'}</div></div></div>`;
+}
+function extPanel(el, P) { // tutto quello che sta fuori dai riquadri dei locali
+  const all = S.items.filter(i => i.planId === P.id && !roomById(i.roomId)); const its = all.filter(i => !i.hint); const hints = all.filter(i => i.hint); const phs = S.photos.filter(p => p.planId === P.id && !roomById(p.roomId) && p.x != null); const dr = its.filter(i => !i.ok).length;
+  const crit = phs.flatMap(p => (p.ai && p.ai.crit) || []);
+  el.innerHTML = `<h2>${EXT_ICON} ${EXT_NAME}</h2>
+    <div class="mut small">Foto, simboli e note fuori dai riquadri dei locali (facciate, cortili, aree esterne). Nel computo e negli export sono il gruppo «${EXT_NAME}».</div>
+    <div class="sec"><div class="row"><b>Foto (${phs.length})</b><button class="sm" style="flex:none" data-act="tool" data-v="photo">+ Foto</button></div>
+      <div class="thumbs" style="margin-top:6px">${phs.map(p => `<img src="${esc(imgSrc(p))}" data-act="selPhoto" data-id="${p.id}" title="${KINDS[p.kind]}">`).join('') || '<div class="mut small" style="grid-column:1/-1">Nessuna foto esterna. Con lo strumento Foto tocca fuori dai locali.</div>'}</div></div>
+    ${vnList(S.vnotes.filter(n => n.planId === P.id && !roomById(n.roomId)).sort((a, b) => a.num - b.num))}
+    <div class="sec"><b>Elementi</b>${countsTable(its)}
+      <div class="row wrap" style="margin-top:8px">${dr ? `<button class="okb sm" data-act="confirmRoom">Conferma ${dr} bozze</button>` : ''}${its.length ? '<button class="sm" data-act="dedupe">Rimuovi doppioni</button>' : ''}</div></div>
+    ${hintList(hints)}
+    ${crit.length ? `<div class="sec"><b>Criticità viste dall'AI</b><ul class="small" style="padding-left:18px;margin:6px 0">${crit.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
+    <button style="width:100%;margin-top:10px" data-act="desel">Chiudi</button>`;
 }
 function roomPanel(el, r) {
   const all = S.items.filter(i => i.roomId === r.id); const its = all.filter(i => !i.hint); const hints = all.filter(i => i.hint); const phs = S.photos.filter(p => p.roomId === r.id); const dr = its.filter(i => !i.ok).length;
@@ -108,7 +129,7 @@ function photoPanel(el, ph) {
   const att = ph.itemId ? itemById(ph.itemId) : null;
   el.innerHTML = `<h2>Foto ${aiChip(ph)}</h2>
     <img src="${esc(imgSrc(ph))}" data-act="view" data-id="${ph.id}" style="width:100%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;background:#ddd;max-height:260px;object-fit:contain">
-    <div class="mut small">${esc(roomById(ph.roomId)?.name || 'fuori dai locali')}${att ? ' • allegata a ' + esc(symOf(att.s).name) : ''} • ${new Date(ph.t || Date.now()).toLocaleString('it-IT')}</div>
+    <div class="mut small">${esc(roomLabel(ph.roomId))}${att ? ' • allegata a ' + esc(symOf(att.s).name) : ''} • ${new Date(ph.t || Date.now()).toLocaleString('it-IT')}</div>
     <label class="f">Tipo di foto</label>
     <div class="row wrap">${Object.entries(KINDS).map(([k, n]) => `<button class="sm ${ph.kind === k ? 'pri' : ''}" data-act="kind" data-v="${k}">${n}</button>`).join('')}</div>
     ${(ph.kind === 'parete' || ph.kind === 'soffitto') ? `
@@ -163,7 +184,7 @@ function itemPanel(el, it) {
     <label class="f">Note</label><textarea data-if="note" placeholder="es. 2 frutti, placca BTicino Living, IP55, 2x58W…">${esc(it.note || '')}</textarea>
     ${!it.ok ? `<div class="row" style="margin-top:10px"><button class="okb" data-act="confirmItem">✓ Conferma</button><button class="danger" data-act="delItem">✕ Scarta</button></div>` : ''}
     ${srcs.length > 1 ? `<div class="sec small"><b>Visto in ${srcs.length} foto</b>: posizione incrociata tra le foto.
-        <div class="row wrap" style="margin-top:6px">${srcs.map(x => `<button class="sm" style="flex:none" data-act="viewSrc" data-id="${x.ph.id}" data-v="${x.d}">${pn.get(x.ph.id) || 'foto'}${x.ph.roomId !== it.roomId ? ' (' + esc(roomById(x.ph.roomId)?.name || '') + ')' : ''}</button>`).join('')}</div>
+        <div class="row wrap" style="margin-top:6px">${srcs.map(x => `<button class="sm" style="flex:none" data-act="viewSrc" data-id="${x.ph.id}" data-v="${x.d}">${pn.get(x.ph.id) || 'foto'}${x.ph.roomId !== it.roomId ? ' (' + esc(roomLabel(x.ph.roomId)) + ')' : ''}</button>`).join('')}</div>
         <button class="sm" style="margin-top:6px" data-act="split">Non è lo stesso oggetto: separa</button></div>`
       : ph ? `<div class="sec small"><div class="row"><span>Da foto ${pn.get(ph.id) || ''}${it.conf != null ? ' • affidabilità ' + Math.round(it.conf * 100) + '%' : ''}${it.est ? ' • <span style="color:var(--warn)">posizione stimata</span>' : ''}</span><button class="sm" style="flex:none" data-act="viewDet">Vedi nella foto</button></div></div>` : ''}
     ${it.oltre && from ? `<div class="small mut">Visto attraverso una porta da ${esc(from.name)}: messo sulla parete del locale accanto${(it.tri || []).length ? '' : '. Una foto da dentro quel locale lo posiziona meglio'}.</div>` : ''}
@@ -178,12 +199,13 @@ function initPanel() {
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const a = b.dataset.act, id = b.dataset.id, v = b.dataset.v; const sel = S.sel;
-    const it = sel && sel.t === 'item' ? itemById(sel.id) : null, ph = sel && sel.t === 'photo' ? photoById(sel.id) : null, rm = sel && sel.t === 'room' ? roomById(sel.id) : null;
+    const it = sel && sel.t === 'item' ? itemById(sel.id) : null, ph = sel && sel.t === 'photo' ? photoById(sel.id) : null, rm = sel && sel.t === 'room' ? roomById(sel.id) : sel && sel.t === 'ext' ? { id: null, planId: sel.id, ext: true } : null;
     switch (a) {
       case 'addPlan': addPlanMenu(); break;
       case 'tool': setTool(v); break;
       case 'desel': select(null); break;
       case 'goRoom': { const r = roomById(id); select('room', id); centerOn(...polyCentroid(r.poly)); break; }
+      case 'goExt': select('ext', curPlan().id); break;
       case 'selPhoto': select('photo', id); break;
       case 'selItem': select('item', id); break;
       case 'selVnote': { const n = vnoteById(id); if (n) { select('vnote', id); centerOn(n.x, n.y); } break; }
@@ -203,7 +225,7 @@ function initPanel() {
       case 'roomDone': { // se manca qualcosa lo dice prima di segnare il locale come rilevato
         if (!rm.done) { const w = roomIssues(rm).filter(i => i.lvl === 'warn'); if (w.length) { const a = await askChoice('In questo locale manca qualcosa', [['no', 'Torna al locale'], ['si', 'Segna rilevato lo stesso']], w.map(i => i.t).join(' • ')); if (a !== 'si') break; } }
         rm.done = !rm.done; Sync.mark('plan:' + rm.planId); renderPanel(); redraw(); break; }
-      case 'confirmRoom': pushUndo(); S.items.filter(i => i.roomId === rm.id && !i.ok && !i.hint).forEach(i => { i.ok = true; Sync.markItem(i); }); renderPanel(); redraw(); break;
+      case 'confirmRoom': pushUndo(); S.items.filter(i => i.planId === rm.planId && (rm.ext ? !roomById(i.roomId) : i.roomId === rm.id) && !i.ok && !i.hint).forEach(i => { i.ok = true; Sync.markItem(i); }); renderPanel(); redraw(); break;
       case 'dedupe': { const n = dedupeRoom(rm); toast(n ? `Rimossi ${n} doppioni` : 'Nessun doppione trovato'); renderPanel(); redraw(); break; }
       case 'redrawMan': setTool('room'); S.redrawRoom = rm.id; renderPanel(); break;
       case 'delRoom': if (await askConfirm(`Eliminare il locale "${rm.name}"? Foto ed elementi restano sulla pianta.`, 'Elimina', true)) { pushUndo(); S.rooms = S.rooms.filter(r => r.id !== rm.id); roomGeometryChanged(rm.planId); Sync.mark('plan:' + rm.planId); select(null); } break;
@@ -261,7 +283,7 @@ function initPanel() {
   });
 }
 function dedupeRoom(r) {
-  const k = ppm(planOf(r.planId)); const its = S.items.filter(i => i.roomId === r.id && !i.pts); let n = 0; const gone = new Set();
+  const k = ppm(planOf(r.planId)); const its = S.items.filter(i => i.planId === r.planId && (r.ext ? !roomById(i.roomId) : i.roomId === r.id) && !i.pts); let n = 0; const gone = new Set();
   pushUndo();
   for (let i = 0; i < its.length; i++) {
     const a = its[i]; if (gone.has(a.id)) continue;
@@ -303,8 +325,15 @@ function renderPenBar(p) {
 }
 const symChip = (s, on) => `<button class="pchip${on ? ' on' : ''}" data-c="${esc(s.code)}" title="${esc(s.code + ' – ' + s.name)}"><img src="${symIcon(s, 48)}"><span><b>${esc(symName2(s))}</b><small>${esc(symShort(s))}</small></span></button>`;
 const symName2 = s => { const n = s.name.split(/[(–]/)[0].trim(); return n.length > 38 ? n.slice(0, 36) + '…' : n; }; // descrizione in primo piano: i codici non si ricordano
-function renderPalette() {
-  const p = $('#palette'); if (S.tool === 'pen') { p.classList.remove('hide'); renderPenBar(p); return; }
+function renderPalette() { renderPalette0(); palH(); }
+function palH() { // le barre in basso (zoom, rotazione) stanno sopra la tavolozza
+  const p = $('#palette'); if (!p) return; const h = !p.classList.contains('hide') ? p.offsetHeight : 0;
+  document.documentElement.style.setProperty('--palH', h + 'px');
+  if (!S._palRO && window.ResizeObserver) { S._palRO = new ResizeObserver(() => { const h2 = !p.classList.contains('hide') ? p.offsetHeight : 0; document.documentElement.style.setProperty('--palH', h2 + 'px'); }); S._palRO.observe(p); }
+}
+function renderPalette0() {
+  const p = $('#palette'); const oldStrip = p.querySelector('#palStrip'); const keep = oldStrip && !p.classList.contains('hide') && p.classList.contains('two') && oldStrip.dataset.mode === (S.palSearch ? 'q' : 'g') ? oldStrip.scrollLeft : null; // letto prima di cambiare l'aspetto della barra
+  p.classList.remove('two'); if (S.tool === 'pen') { p.classList.remove('hide'); renderPenBar(p); return; }
   if (S.tool === 'sel' && ST().quickBar !== false && curPlan()) { // barra rapida: i simboli più usati, un tocco e sei già con il simbolo in mano
     const qs = quickSyms(8); if (!qs.length) { p.classList.add('hide'); return; }
     p.classList.remove('hide');
@@ -314,22 +343,56 @@ function renderPalette() {
     return;
   }
   if (S.tool !== 'sym') { p.classList.add('hide'); return; }
-  p.classList.remove('hide');
-  const ln = S.tmp.line || []; const q = (S.palQ || '').trim().toLowerCase();
-  const lineBtns = symOf(S.symSel).mount === 'lineare' ? `<button class="sm okb" data-fin="1" ${ln.length < 2 ? 'disabled' : ''}>Fine (${ln.length})</button><button class="sm" data-clr="1">Annulla</button>` : '';
-  const stampBtn = `<button class="sm${ST().stamp ? ' pri' : ''}" data-stamp="1" style="flex:none" title="Timbro: resta sul simbolo dopo averlo messo, per metterne tanti uguali">${ST().stamp ? '✓ Timbro' : 'Timbro'}</button>` + (ST().stamp ? `<button class="sm" data-stampend="1" style="flex:none">Fine timbro</button>` : '');
-  const match = s => !q || q.split(/\s+/).every(w => (s.code + ' ' + s.name).toLowerCase().includes(w));
+  // tavolozza a due righe, come le emoji del telefono: sopra i gruppi, sotto i simboli che scorrono di gruppo in gruppo
+  p.classList.remove('hide'); p.classList.add('two');
+  const ln = S.tmp.line || [];
+  const lineBtns = symOf(S.symSel).mount === 'lineare' ? `<span class="pline"><button class="sm okb" data-fin="1" ${ln.length < 2 ? 'disabled' : ''}>Fine linea (${ln.length})</button><button class="sm" data-clr="1">Annulla</button></span>` : '';
+  const top = quickSyms(12);
+  const groups = PAL_GROUPS.map(([k, n, col]) => ({ k, n, col, ss: k === 'top' ? top : S.lib.symbols.filter(s => symGroup(s) === k) })).filter(g => g.ss.length);
+  if (!groups.some(g => g.k === S.palGrp)) S.palGrp = groups.length ? groups[0].k : null;
   const chip = s => symChip(s, s.code === S.symSel);
-  const top = quickSyms(10);
-  let shown = 0;
-  const cats = Object.entries(CATS).map(([c, cd]) => { const ss = S.lib.symbols.filter(s => s.cat === c && match(s)).slice(0, q ? 60 : 1000); shown += ss.length; return ss.length ? `<span class="pcat">${esc(cd.n)}</span>` + ss.map(chip).join('') : ''; }).join('');
-  p.innerHTML = `<input id="palQ" class="palq" type="search" placeholder="Cerca simbolo…" value="${esc(S.palQ || '')}">` + lineBtns + stampBtn + (top.length && !q ? `<span class="pcat">Più usati</span>${top.map(chip).join('')}` : '') + (shown ? cats : '<span class="mut small" style="padding:0 8px">Nessun simbolo trovato</span>');
-  p.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { S.symSel = b.dataset.c; S.tmp = {}; renderPalette(); updateHint(); redraw(); });
-  p.querySelector('[data-stamp]').onclick = () => { ST().stamp = !ST().stamp; Sync.mark('lib'); renderPalette(); updateHint(); };
-  const se = p.querySelector('[data-stampend]'); if (se) se.onclick = () => { ST().stamp = false; Sync.mark('lib'); setTool('sel'); };
+  const tabs = `<button class="ptab${S.palSearch ? ' on' : ''}" data-srch="1" title="Cerca un simbolo per nome o codice">🔍 Cerca</button>`
+    + `<button class="ptab${ST().stamp ? ' on' : ''}" data-stamp="1" title="${ST().stamp ? 'Fine timbro: torna alla freccia' : 'Timbro: resta sul simbolo dopo averlo messo, per metterne tanti uguali'}">${ST().stamp ? '✓ Timbro (fine)' : 'Timbro'}</button><span class="psep"></span>`
+    + groups.map(g => `<button class="ptab${!S.palSearch && g.k === S.palGrp ? ' on' : ''}" data-g="${g.k}"><i style="background:${g.col}"></i>${esc(g.n)}</button>`).join('') + lineBtns;
+  const strip = S.palSearch
+    ? `<input id="palQ" class="palq" type="search" placeholder="Nome o codice del simbolo…" value="${esc(S.palQ || '')}"><span id="palRes" class="pres"></span>`
+    : groups.map(g => `<span class="pcat" data-gs="${g.k}" style="color:${g.col}">${esc(g.n)}</span>${g.ss.map(chip).join('')}`).join('');
+  p.innerHTML = `<div class="prow ptabs">${tabs}</div><div class="prow" id="palStrip" data-mode="${S.palSearch ? 'q' : 'g'}">${strip}</div>`;
+  const st = p.querySelector('#palStrip');
+  const pick = b => { S.symSel = b.dataset.c; S.tmp = {}; renderPalette(); updateHint(); redraw(); };
+  const bindChips = root => root.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b));
+  bindChips(st);
+  const markTab = k => p.querySelectorAll('[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === k));
+  const jump = k => { const l = st.querySelector(`[data-gs="${k}"]`); if (!l) return; S.palGrp = k; markTab(k); S._palLock = Date.now() + 120; st.scrollLeft = Math.max(0, l.offsetLeft - 4); }; // salto immediato, come la tastiera delle emoji
+  p.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { if (S.palSearch) { S.palSearch = false; S.palJump = b.dataset.g; renderPalette(); return; } jump(b.dataset.g); });
+  p.querySelector('[data-srch]').onclick = () => { S.palSearch = !S.palSearch; if (!S.palSearch) S.palJump = S.palGrp; renderPalette(); if (S.palSearch) { const i = $('#palQ'); if (i) i.focus(); } };
+  p.querySelector('[data-stamp]').onclick = () => { // acceso: resta sul simbolo; ritoccato: fine timbro e torna alla freccia
+    if (ST().stamp) { ST().stamp = false; Sync.mark('lib'); setTool('sel'); return; }
+    ST().stamp = true; Sync.mark('lib'); renderPalette(); updateHint();
+  };
   const f = p.querySelector('[data-fin]'); if (f) f.onclick = finishLine;
   const cl = p.querySelector('[data-clr]'); if (cl) cl.onclick = () => { S.tmp = {}; renderPalette(); redraw(); };
-  const inp = p.querySelector('#palQ'); inp.oninput = () => { S.palQ = inp.value; clearTimeout(S._palT); S._palT = setTimeout(() => { renderPalette(); const i2 = $('#palQ'); if (i2) { i2.focus(); const n = i2.value.length; try { i2.setSelectionRange(n, n); } catch (e) { } } }, 180); };
+  if (S.palSearch) {
+    const doSearch = () => {
+      const res = p.querySelector('#palRes'); if (!res) return; const q = (S.palQ || '').trim().toLowerCase();
+      if (!q) { res.innerHTML = '<span class="mut small" style="padding:0 8px;white-space:nowrap">Scrivi una parola del nome (es. presa, faretto, quadro) o il codice</span>'; return; }
+      const ws = q.split(/\s+/); const ss = S.lib.symbols.filter(s => ws.every(w => (s.code + ' ' + s.name + ' ' + (s.short || '')).toLowerCase().includes(w))).slice(0, 80);
+      res.innerHTML = ss.length ? ss.map(chip).join('') : '<span class="mut small" style="padding:0 8px">Nessun simbolo trovato</span>'; bindChips(res);
+    };
+    const inp = p.querySelector('#palQ'); inp.oninput = () => { S.palQ = inp.value; clearTimeout(S._palT); S._palT = setTimeout(doSearch, 150); };
+    doSearch(); if (keep != null) st.scrollLeft = keep;
+    return;
+  }
+  if (S.palJump) { jump(S.palJump); S.palJump = null; } else if (keep != null) st.scrollLeft = keep; else jump(S.palGrp);
+  st.addEventListener('scroll', () => { // scorrendo, si accende il gruppo che stai guardando
+    if (S._palRq) return; S._palRq = requestAnimationFrame(() => {
+      S._palRq = 0; if (Date.now() < (S._palLock || 0)) return;
+      const ls = [...st.querySelectorAll('[data-gs]')]; if (!ls.length) return; let cur = ls[0];
+      for (const l of ls) if (l.offsetLeft - st.scrollLeft <= 40) cur = l;
+      if (st.scrollLeft + st.clientWidth >= st.scrollWidth - 4) { const vis = ls.filter(l => l.offsetLeft < st.scrollLeft + st.clientWidth - 60); if (vis.length) cur = vis[vis.length - 1]; }
+      if (cur.dataset.gs !== S.palGrp) { S.palGrp = cur.dataset.gs; markTab(S.palGrp); }
+    });
+  }, { passive: true });
 }
 
 /* ============ NUOVA FOTO ============ */
@@ -340,8 +403,9 @@ function openPhotoSheet(pose) {
   const title = attached ? (pose.kind === 'quadro' ? 'Foto del quadro' : 'Foto di dettaglio') : pose.kind === 'parete' ? 'Foto verso la parete' : 'Foto puntuale (soffitto o pavimento)';
   const help = attached ? (pose.kind === 'quadro' ? 'Quadro aperto, inquadratura frontale, targhette leggibili. Se il quadro è grande fai più foto.' : '')
     : pose.kind === 'parete' ? 'Tablet in verticale davanti a te, nella direzione del cono.' : 'Tablet puntato in alto (soffitto) o in basso (pavimento), sopra il punto che hai toccato.';
+  const outside = !attached && pose.x != null && curPlan() && !roomAt(curPlan().id, pose.x, pose.y);
   const sw = !attached && pose.compass; // tocco con la bussola attiva: posso passare alla foto puntuale e viceversa
-  const b = openModal(`<h3>${title}</h3>${help ? `<div class="mut small">${help}</div>` : ''}
+  const b = openModal(`<h3>${title}</h3>${help ? `<div class="mut small">${help}</div>` : ''}${outside ? `<div class="small" style="margin-top:6px">${EXT_ICON} Sei fuori dai locali: la foto e i suoi elementi vanno negli <b>${EXT_NAME}</b>.${pose.kind === 'parete' && !pose.len ? ' Trascina il cono fino alla facciata per posizionare meglio gli oggetti.' : ''}</div>` : ''}
     ${sw ? `<div class="row" style="margin-top:10px;gap:6px"><button class="sm ${pose.kind === 'parete' ? 'pri' : ''}" data-k="parete">Parete davanti a me</button><button class="sm ${pose.kind !== 'parete' ? 'pri' : ''}" data-k="soffitto">Soffitto / pavimento</button></div>` : ''}
     <div class="row" style="margin-top:14px"><button class="pri" style="min-height:64px;font-size:17px" id="pCam">📷 Scatta</button><button style="min-height:64px;font-size:17px" id="pGal">🖼 Dalla galleria</button></div>
     <div class="acts"><button id="pCanc">Annulla</button></div>`);
@@ -362,7 +426,7 @@ function openViewer(id, detIdx, opt = {}) {
   $('#viewer').classList.remove('hide');
   const img = $('#vimg'); img.onload = () => { if (!ph.w) { ph.w = img.naturalWidth; ph.h = img.naturalHeight; } fitViewer(); drawBoxes(); };
   img.src = imgSrc(ph); if (img.complete && img.naturalWidth) { fitViewer(); drawBoxes(); }
-  const room = roomById(ph.roomId); $('#vTitle').textContent = `${KINDS[ph.kind]} • ${room ? room.name : ''}`;
+  $('#vTitle').textContent = `${KINDS[ph.kind]} • ${roomLabel(ph.roomId)}`;
   const ai = ph.ai || {}; const its = S.items.filter(i => i.photoId === id);
   $('#vside').innerHTML = (ai.desc ? `<div>${esc(ai.desc)}</div>` : '<div style="opacity:.7">Nessuna analisi AI su questa foto.</div>') + ((ai.crit || []).length ? `<div style="color:#fbbf24;margin-top:4px">⚠ ${ai.crit.map(esc).join(' • ')}</div>` : '') +
     (its.length ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">${its.map(it => `<button class="sm" style="background:#22262e;color:#fff;border-color:#343a45" data-vi="${it.id}">${it.hint ? '⚠ ' : ''}${isPlate(it) ? 'Placca ' + it.pl.length : esc(symShort(symOf(it.s)))}${it.n > 1 ? '×' + it.n : ''} ${it.ok ? '✓' : ''}</button>`).join('')}</div>` : '');
@@ -391,7 +455,7 @@ function drawBoxes() {
 function initViewer() {
   $('#vClose').onclick = closeViewer;
   $('#vBoxes').onclick = () => { VW.boxes = !VW.boxes; drawBoxes(); };
-  const nav = d => { const ph = photoById(VW.id); const list = S.photos.filter(p => p.planId === ph.planId && (ph.roomId ? p.roomId === ph.roomId : true)); const i = list.findIndex(p => p.id === ph.id); const n = list[(i + d + list.length) % list.length]; if (n) openViewer(n.id); };
+  const nav = d => { const ph = photoById(VW.id); const list = S.photos.filter(p => p.planId === ph.planId && (p.roomId || null) === (ph.roomId || null)); const i = list.findIndex(p => p.id === ph.id); const n = list[(i + d + list.length) % list.length]; if (n) openViewer(n.id); };
   $('#vPrev').onclick = () => nav(-1); $('#vNext').onclick = () => nav(1);
   const st = $('#vstage'); const P = new Map(); let g = null;
   st.addEventListener('pointerdown', e => { st.setPointerCapture(e.pointerId); P.set(e.pointerId, [e.clientX, e.clientY]); const v = [...P.values()]; g = v.length === 2 ? { d0: Math.hypot(v[0][0] - v[1][0], v[0][1] - v[1][1]), m0: [(v[0][0] + v[1][0]) / 2, (v[0][1] + v[1][1]) / 2], s0: VW.s, tx: VW.tx, ty: VW.ty } : { p0: [e.clientX, e.clientY], tx: VW.tx, ty: VW.ty }; });

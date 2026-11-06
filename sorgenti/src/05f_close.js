@@ -7,7 +7,7 @@ function generalCheck() { // tutto quello che manca, tavola per tavola
   const plans = S.sv.plans.map(P => {
     const rooms = S.rooms.filter(r => r.planId === P.id); const phs = S.photos.filter(p => p.planId === P.id && p.kind !== 'dettaglio');
     const o = { plan: P, scale: !!P.ppm, rooms: rooms.map(r => ({ r, st: roomState(r), iss: roomIssues(r) })), noRoom: phs.filter(p => !p.roomId).length, pend: phs.filter(p => p.aiSt === 'none' || p.aiSt === 'error').map(p => p.id), items: S.items.filter(i => i.planId === P.id && !i.hint).length, hints: S.items.filter(i => i.planId === P.id && i.hint).length };
-    o.warn = o.rooms.filter(x => x.st === 'warn').length + (o.scale ? 0 : 1) + (o.noRoom ? 1 : 0) + (!rooms.length ? 1 : 0);
+    o.warn = o.rooms.filter(x => x.st === 'warn').length + (o.scale ? 0 : 1) + (!rooms.length ? 1 : 0); // le foto esterne non sono un problema: vanno negli Esterni
     return o;
   });
   return { plans, warn: plans.reduce((a, o) => a + o.warn, 0), pend: plans.flatMap(o => o.pend) };
@@ -20,7 +20,7 @@ function openGeneralCheck() {
     ${g.plans.map(o => `<div class="sec"><b>${esc(o.plan.name)}</b> <span class="mut small">${o.rooms.length} locali • ${o.items} elementi</span>
       ${o.scale ? '' : '<div class="small" style="color:#c2410c">🟠 scala non calibrata: le misure e il DXF non sono in scala</div>'}
       ${o.rooms.length ? '' : '<div class="small" style="color:#c2410c">🟠 nessun locale disegnato</div>'}
-      ${o.noRoom ? `<div class="small" style="color:#c2410c">🟠 ${o.noRoom} foto fuori dai locali (gli elementi non vengono conteggiati per locale)</div>` : ''}
+      ${o.noRoom ? `<div class="mut small">🌳 ${o.noRoom} foto esterne (fuori dai locali): i loro elementi sono negli ${EXT_NAME}</div>` : ''}
       <div class="dlist" style="margin-top:6px">${o.rooms.map(x => `<div class="drow" data-go="${x.r.id}"><span style="font-size:16px">${ROOM_DOT[x.st]}</span><div class="g"><b>${esc(x.r.name)}</b>${x.st === 'done' ? '' : `<div class="small">${x.iss.length ? x.iss.map(i => `<span style="color:${i.lvl === 'warn' ? '#c2410c' : '#1e3a8a'}">${esc(i.t)}</span>`).join(' • ') : '<span style="color:#166534">coerente</span>'}</div>`}</div></div>`).join('')}</div>
       ${o.hints ? `<div class="mut small" style="margin-top:4px">⚠ ${o.hints} indizi AI (non conteggiati)</div>` : ''}</div>`).join('')}
     ${closed ? `<div class="sec"><b>Sopralluogo chiuso il ${fmtDT(closed)}</b><div class="small mut">Da allora: ${ts.nuovi} elementi nuovi, ${ts.modificati} modificati, ${ts.rimossi} rimossi (scelte tecniche). Lo stato di fatto resta salvato.</div></div>` : ''}

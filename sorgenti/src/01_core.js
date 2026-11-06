@@ -100,6 +100,19 @@ function quickSyms(n = 8) {
   codes.sort((a, b) => (u[b] || 0) - (u[a] || 0) || (rec.indexOf(a) < 0 ? 99 : rec.indexOf(a)) - (rec.indexOf(b) < 0 ? 99 : rec.indexOf(b)));
   return codes.slice(0, n).map(symOf);
 }
+/* gruppi della tavolozza dei simboli (come le emoji del telefono): colore del simbolo e categoria */
+const PAL_GROUPS = [['top', 'Più usati', '#64748b'], ['luce', 'Illuminazione', '#16a34a'], ['fm', 'Forza motrice', '#dc2626'], ['spec', 'Speciali', '#c026d3'], ['dist', 'Distribuzione', '#0891b2']];
+const rgbOf = c => { if (!c || c[0] !== '#' || c.length < 7) return null; return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; };
+const isGreenCol = c => { const v = rgbOf(c); return !!v && v[1] > 90 && v[1] > v[0] * 1.6 && v[1] > v[2] * 1.6; };
+function symGroup(s) {
+  if (!s) return 'spec'; if (s.grp) return s.grp; // gruppo scelto a mano per un simbolo
+  const c = s.cat; if (c === 'Q' || c === 'T') return 'dist'; if (c === 'L') return 'luce'; if (c === 'S' || c === 'X') return 'spec';
+  const g = s.leg ? legGeom(s.code) : null; const col = (g && g.main) || s.color || '';
+  if (isGreenCol(col)) return 'luce'; // simboli verdi: luce e comandi luce (anche la presa luce 10A)
+  if (c === 'P' && /\bTV\b|\bdati\b|telefon|RJ ?45/i.test(s.name)) return 'spec';
+  if (c === 'U' && !/^#ff0000$/i.test(col) && !/^#(d|e|f)/i.test(col)) return 'spec'; // es. moduli FV (grigi)
+  return 'fm'; // rossi e il resto di prese, comandi e utenze
+}
 const fateLabel = f => (FATES.find(x => x[0] === (f || '')) || FATES[0])[1];
 const fateShort = f => ({ rimuovere: 'R', sostituire: 'S', nuovo: 'N' })[f] || '';
 const CATS = {
@@ -209,6 +222,8 @@ const curPlan = () => S.sv && S.sv.plans.find(p => p.id === S.planId);
 const planOf = id => S.sv && S.sv.plans.find(p => p.id === id);
 const ppm = (p = curPlan()) => (p && p.ppm) || (p ? Math.max(p.w, p.h) / 30 : 40); // px/m (stima se non calibrato)
 const roomById = id => S.rooms.find(r => r.id === id);
+const EXT_NAME = 'Esterni'; // tutto quello che sta fuori dai riquadri dei locali
+const roomLabel = id => roomById(id)?.name || EXT_NAME;
 const photoById = id => S.photos.find(p => p.id === id);
 const itemById = id => S.items.find(i => i.id === id);
 

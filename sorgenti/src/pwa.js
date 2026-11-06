@@ -195,7 +195,7 @@ const Archive = {
     if (sv.archGen !== gen) { sv.arch = {}; sv.archGen = gen; changed = true; } // la mappa dei file vale solo per la cartella in cui sono stati scritti
     if (!sv.dir) { sv.dir = `${safeName(sv.name)}_${sv.id.slice(-5)}`; changed = true; }
     const arch = sv.arch || (sv.arch = {}); const dir = await fsDir(this.root, [sv.dir]);
-    const rn = id => (snap.rooms.find(r => r.id === id) || {}).name || 'esterno';
+    const rn = id => (snap.rooms.find(r => r.id === id) || {}).name || 'Esterni';
     const want = new Map(); // chiave -> { nome file, versione, kind, ref }
     for (const P of sv.plans || []) want.set('plan_' + P.id, { f: `piante/${safeName(P.name)}_${P.id.slice(-4)}`, v: 1, def: 'png' });
     for (const p of snap.photos) want.set('photo_' + p.id, { f: `foto/${stamp(p.t)}_${safeName(rn(p.roomId))}_${p.kind}_${p.id.slice(-3)}`, v: 1, def: 'jpg' });

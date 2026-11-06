@@ -73,6 +73,7 @@ function snapToRoomWall(planId, x, y, maxM = 0.6) {
     }
   }
   if (!best) return null;
+  if (bd > 0.2 * k && !roomAt(planId, x, y)) return null; // tocco chiaramente fuori dal locale (es. facciata): resta all'esterno
   const { q, a, b, r } = best; const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
   let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L; // normale al lato, verso l'interno
   if (!pointInPoly(q[0] + nx * 2, q[1] + ny * 2, r.poly)) { nx = -nx; ny = -ny; }
@@ -138,7 +139,12 @@ function projectUV(ph, u, v, posa, distM, hM, oltre) {
   if (mount === 'parete') {
     const w = wallHit(ph, room, ang, distM ? distM * k : null);
     if (w) { const t = Math.max(0.15 * k, w.t - inset); return { x: ph.x + Math.cos(w.a) * t, y: ph.y + Math.sin(w.a) * t, est: false }; }
-    const t = (distM || 2.5) * k; return { x: ph.x + Math.cos(ang) * t, y: ph.y + Math.sin(ang) * t, est: true };
+    let t = distM ? distM * k : (!room && ph.len ? ph.len : 2.5 * k);
+    if (!room) { // foto all'esterno: mai dentro un locale, l'oggetto resta sulla facciata
+      let tr = null; for (const r of S.rooms) { if (r.planId !== ph.planId || !r.poly || r.poly.length < 3) continue; const h = raycast(r.poly, ph.x, ph.y, ang); if (h != null && (tr == null || h < tr)) tr = h; }
+      if (tr != null && t > tr - 0.4 * k) t = Math.max(0.15 * k, tr - 0.4 * k);
+    }
+    return { x: ph.x + Math.cos(ang) * t, y: ph.y + Math.sin(ang) * t, est: !(distM || (!room && ph.len)) };
   }
   // soffitto / pavimento: dentro il locale lungo la direzione, mai oltre la parete
   const w0 = wallHit(ph, room, ang, null);

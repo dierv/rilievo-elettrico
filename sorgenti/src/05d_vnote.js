@@ -9,7 +9,7 @@ const AUD_MIME = { m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac', mp3: 'a
 let pendingVn = null; // nuova nota { planId, roomId, x, y } oppure { replace: id }
 const vnoteById = id => S.vnotes.find(n => n.id === id);
 const vnLabel = n => 'N' + n.num;
-const vnFileName = n => `N${String(n.num).padStart(2, '0')}_${safeName(roomById(n.roomId)?.name || 'esterno')}.${n.ext || 'm4a'}`;
+const vnFileName = n => `N${String(n.num).padStart(2, '0')}_${safeName(roomLabel(n.roomId))}.${n.ext || 'm4a'}`;
 const fmtDur = s => { if (s == null || !isFinite(s)) return ''; const t = Math.round(s); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const fmtDT = t => { try { return new Date(t).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } };
 function audioKind(f) { // alcuni registratori non dichiarano il tipo: lo ricavo dall'estensione
@@ -103,7 +103,7 @@ function blobToB64(blob) {
 async function audioUploadBody(blob) { return new Blob(['RILAUDIO1\n' + (blob.type || 'audio/mp4') + '\n', await blobToB64(blob)], { type: 'text/plain' }); }
 
 /* ---- pannello ---- */
-const vnMeta = n => [roomById(n.roomId)?.name || 'Fuori dai locali', fmtDT(n.t), fmtDur(n.dur), n.local && CAP.assets ? 'in caricamento' : ''].filter(Boolean).join(' • ');
+const vnMeta = n => [roomLabel(n.roomId), fmtDT(n.t), fmtDur(n.dur), n.local && CAP.assets ? 'in caricamento' : ''].filter(Boolean).join(' • ');
 function vnotePanel(el, n) {
   const canPlay = n.mime ? !!document.createElement('audio').canPlayType(n.mime) : false;
   el.innerHTML = `<h2>🎙 Nota audio ${vnLabel(n)}</h2>
