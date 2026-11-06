@@ -115,7 +115,7 @@ async function saveFile(filename, data) {
 const csvCell = v => { const s = v == null ? '' : String(v); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 const csv = rows => '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
 
-/* ---- DXF R12 ---- */
+/* ---- DXF R2000 (AC1015): handle, tabelle complete, blocchi; immagine di sfondo come IMAGE per le tavole da PDF/foto ---- */
 function dxfText(s) { return String(s).replace(/[\r\n]+/g, ' ').replace(/[^\x20-\x7e]/g, c => '\\U+' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')); }
 function shapePoly(shape) {
   const P = {
@@ -125,69 +125,110 @@ function shapePoly(shape) {
     semi: Array.from({ length: 13 }, (_, i) => { const a = Math.PI + i * Math.PI / 12; return [Math.cos(a) * .85, .35 + Math.sin(a) * .85]; }),
   }; return P[shape] || null;
 }
-function buildDxf(P, pnum) {
+const DXF_INSUNITS = { 1000: 4, 100: 5, 1: 6 }; // unità disegno per metro → $INSUNITS (mm, cm, m)
+// img = { file, w, h }: file immagine (nella stessa cartella del DXF) da mettere sotto il rilievo, sul layer RIL_SFONDO
+function buildDxf(P, pnum, img = null) {
   const out = []; const g = (c, v) => { out.push(String(c)); out.push(typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(6)) : String(v)); };
+  let hs = 0x100; const H = () => (hs++).toString(16).toUpperCase(); const MS = '1F', PS = '1B'; // handle dei record di spazio modello e carta
   const T = P.dxf ? ((x, y) => [P.dxf.minX + x / P.dxf.s, P.dxf.maxY - y / P.dxf.s]) : ((x, y) => { const k = ppm(P); return [x / k, -y / k]; });
   const U = P.dxf ? 1 / P.dxf.u : 1; // unità disegno per metro
+  if (P.dxf) img = null; // la tavola viene da un DXF: il disegno ce l'ha già l'utente, il rilievo si sovrappone
   const layers = new Map([['RIL_LOCALI', 8], ['RIL_LOCALI_NOMI', 7], ['RIL_SIGLE', 7], ['RIL_NOTE', 9], ['RIL_FOTO', 140], ['RIL_INDIZI', 40], ['RIL_DISEGNO', 1], ['RIL_NOTE_AUDIO', aciOf(VN_COL)]]);
+  if (img) layers.set('RIL_SFONDO', 7);
   Object.values(CATS).forEach(c => { layers.set(c.layer, c.aci); layers.set(c.layer + '_BOZZE', 211); if (closedAt()) { layers.set(c.layer + '_PROGETTO', 5); layers.set(c.layer + '_PROGETTO_BOZZE', 211); layers.set(c.layer + '_RIMOSSI', 8); } });
   const all = S.items.filter(i => i.planId === P.id); const items = all.filter(i => !i.hint).concat(closedAt() && !Sync.paused ? techRemoved(P.id).map(o => ({ ...o, ok: true, _rem: true })) : []); // dopo la chiusura anche gli elementi rimossi, sul loro layer
   const used = [...new Set(items.filter(i => !i.pts).flatMap(i => isPlate(i) ? plCodes(i).filter(Boolean) : [i.s]))];
   const fatesUsed = new Set(items.map(i => i.fate).filter(Boolean)); // layer del destino solo se servono
   Object.values(CATS).forEach(c => fatesUsed.forEach(f => { layers.set(c.layer + FATE_LAYER[f], { rimuovere: 1, sostituire: 30, nuovo: 3 }[f]); layers.set(c.layer + FATE_LAYER[f] + '_BOZZE', 211); }));
-  const [x0, y0] = T(0, P.h), [x1, y1] = T(P.w, 0);
-  g(0, 'SECTION'); g(2, 'HEADER'); g(9, '$ACADVER'); g(1, 'AC1009'); g(9, '$INSBASE'); g(10, 0); g(20, 0); g(30, 0); g(9, '$EXTMIN'); g(10, Math.min(x0, x1)); g(20, Math.min(y0, y1)); g(30, 0); g(9, '$EXTMAX'); g(10, Math.max(x0, x1)); g(20, Math.max(y0, y1)); g(30, 0); g(0, 'ENDSEC');
+  const [x0, y0] = T(0, P.h), [x1, y1] = T(P.w, 0); const exMin = [Math.min(x0, x1), Math.min(y0, y1)], exMax = [Math.max(x0, x1), Math.max(y0, y1)];
+  const IH = img ? { dict: H(), def: H(), react: H(), vars: H(), ent: H() } : null;
+  // ---- entità (con handle, proprietario e marcatori di sottoclasse) ----
+  const ent = (type, layer, owner, color) => { g(0, type); g(5, H()); g(330, owner || MS); g(100, 'AcDbEntity'); g(8, layer); if (color != null) g(62, color); };
+  const lwp = (layer, pts, closed, o = {}) => { ent('LWPOLYLINE', layer, o.owner, o.color); g(100, 'AcDbPolyline'); g(90, pts.length); g(70, closed ? 1 : 0); if (o.w) g(43, o.w); pts.forEach((p, i) => { g(10, p[0]); g(20, p[1]); if (o.vw) { g(40, o.vw[i][0]); g(41, o.vw[i][1]); } }); };
+  const line = (layer, a, b, o = {}) => { ent('LINE', layer, o.owner, o.color); g(100, 'AcDbLine'); g(10, a[0]); g(20, a[1]); g(30, 0); g(11, b[0]); g(21, b[1]); g(31, 0); };
+  const circ = (layer, x, y, r, o = {}) => { ent('CIRCLE', layer, o.owner, o.color); g(100, 'AcDbCircle'); g(10, x); g(20, y); g(30, 0); g(40, r); };
+  const text = (layer, x, y, h, s, center, o = {}) => {
+    ent('TEXT', layer, o.owner, o.color); g(100, 'AcDbText'); g(10, x); g(20, y); g(30, 0); g(40, h); g(1, dxfText(s)); if (o.rot) g(50, o.rot); if (o.wf && o.wf !== 1) g(41, o.wf); g(7, 'Standard');
+    const ha = center ? 1 : (o.ha || 0), va = center ? 2 : (o.va || 0); if (ha || va) { g(72, ha); g(11, x); g(21, y); g(31, 0); } g(100, 'AcDbText'); if (va) g(73, va);
+  };
+  const solid = (layer, c, a, b, d, e, owner) => { ent('SOLID', layer, owner, c); g(100, 'AcDbTrace'); g(10, a[0]); g(20, a[1]); g(30, 0); g(11, b[0]); g(21, b[1]); g(31, 0); g(12, e[0]); g(22, e[1]); g(32, 0); g(13, d[0]); g(23, d[1]); g(33, 0); };
+  const insert = (layer, name, x, y, sc, rot) => { ent('INSERT', layer); g(100, 'AcDbBlockReference'); g(2, name); g(10, x); g(20, y); g(30, 0); g(41, sc); g(42, sc); g(43, sc); g(50, rot); };
+  const E = { g, lwp, line, circ, text, solid };
+  // ---- HEADER ----
+  g(0, 'SECTION'); g(2, 'HEADER'); g(9, '$ACADVER'); g(1, 'AC1015'); g(9, '$HANDSEED'); const seedAt = out.length + 1; g(5, 'FFFF');
+  g(9, '$INSBASE'); g(10, 0); g(20, 0); g(30, 0); g(9, '$EXTMIN'); g(10, exMin[0]); g(20, exMin[1]); g(30, 0); g(9, '$EXTMAX'); g(10, exMax[0]); g(20, exMax[1]); g(30, 0);
+  g(9, '$INSUNITS'); g(70, DXF_INSUNITS[Math.round(U)] || 0); g(9, '$MEASUREMENT'); g(70, 1); g(0, 'ENDSEC');
+  // ---- CLASSES (servono per l'immagine) ----
+  g(0, 'SECTION'); g(2, 'CLASSES');
+  if (img) for (const [n, c, f, e] of [['IMAGE', 'AcDbRasterImage', 127, 1], ['IMAGEDEF', 'AcDbRasterImageDef', 0, 0], ['IMAGEDEF_REACTOR', 'AcDbRasterImageDefReactor', 1, 0], ['RASTERVARIABLES', 'AcDbRasterVariables', 0, 0]]) { g(0, 'CLASS'); g(1, n); g(2, c); g(3, 'ISM'); g(90, f); g(280, 0); g(281, e); }
+  g(0, 'ENDSEC');
+  // ---- TABLES ----
+  const tbl = (name, h, n, extra) => { g(0, 'TABLE'); g(2, name); g(5, h); g(330, '0'); g(100, 'AcDbSymbolTable'); g(70, n); if (extra) g(100, extra); };
+  const rec = (type, owner, sub) => { g(0, type); g(type === 'DIMSTYLE' ? 105 : 5, H()); g(330, owner); g(100, 'AcDbSymbolTableRecord'); g(100, sub); };
   g(0, 'SECTION'); g(2, 'TABLES');
-  g(0, 'TABLE'); g(2, 'LTYPE'); g(70, 1); g(0, 'LTYPE'); g(2, 'CONTINUOUS'); g(70, 0); g(3, 'Solid line'); g(72, 65); g(73, 0); g(40, 0); g(0, 'ENDTAB');
-  g(0, 'TABLE'); g(2, 'LAYER'); g(70, layers.size + 1); g(0, 'LAYER'); g(2, '0'); g(70, 0); g(62, 7); g(6, 'CONTINUOUS');
-  for (const [n, c] of layers) { g(0, 'LAYER'); g(2, n); g(70, 0); g(62, c); g(6, 'CONTINUOUS'); }
+  const cx = (exMin[0] + exMax[0]) / 2, cy = (exMin[1] + exMax[1]) / 2, vh = Math.max(1e-3, (exMax[1] - exMin[1]) * 1.1), va = Math.max(1e-3, (exMax[0] - exMin[0]) / Math.max(1e-9, exMax[1] - exMin[1]));
+  tbl('VPORT', '8', 1); rec('VPORT', '8', 'AcDbViewportTableRecord'); g(2, '*ACTIVE'); g(70, 0); g(10, 0); g(20, 0); g(11, 1); g(21, 1); g(12, cx); g(22, cy); g(13, 0); g(23, 0); g(14, 10); g(24, 10); g(15, 10); g(25, 10); g(16, 0); g(26, 0); g(36, 1); g(17, 0); g(27, 0); g(37, 0); g(40, vh); g(41, va); g(42, 50); g(43, 0); g(44, 0); g(50, 0); g(51, 0); g(71, 0); g(72, 100); g(73, 1); g(74, 3); g(75, 0); g(76, 0); g(77, 0); g(78, 0); g(0, 'ENDTAB');
+  tbl('LTYPE', '5', 3); for (const [n, d] of [['ByBlock', ''], ['ByLayer', ''], ['Continuous', 'Solid line']]) { rec('LTYPE', '5', 'AcDbLinetypeTableRecord'); g(2, n); g(70, 0); g(3, d); g(72, 65); g(73, 0); g(40, 0); } g(0, 'ENDTAB');
+  tbl('LAYER', '2', layers.size + 1); for (const [n, c] of [['0', 7], ...layers]) { rec('LAYER', '2', 'AcDbLayerTableRecord'); g(2, n); g(70, 0); g(62, c); g(6, 'Continuous'); g(370, -3); g(390, 'F'); } g(0, 'ENDTAB');
+  tbl('STYLE', '3', 1); rec('STYLE', '3', 'AcDbTextStyleTableRecord'); g(2, 'Standard'); g(70, 0); g(40, 0); g(41, 1); g(50, 0); g(71, 0); g(42, 2.5); g(3, 'txt'); g(4, ''); g(0, 'ENDTAB');
+  tbl('VIEW', '6', 0); g(0, 'ENDTAB'); tbl('UCS', '7', 0); g(0, 'ENDTAB');
+  tbl('APPID', '9', 1); rec('APPID', '9', 'AcDbRegAppTableRecord'); g(2, 'ACAD'); g(70, 0); g(0, 'ENDTAB');
+  tbl('DIMSTYLE', 'A', 1, 'AcDbDimStyleTable'); rec('DIMSTYLE', 'A', 'AcDbDimStyleTableRecord'); g(2, 'Standard'); g(70, 0); g(0, 'ENDTAB');
+  const blocks = []; const written = new Set();
+  for (const code of used) { const s = symOf(code); const bn = blockNameOf(s); if (written.has(bn)) continue; written.add(bn); blocks.push({ bn, s, h: H() }); }
+  tbl('BLOCK_RECORD', '1', 2 + blocks.length);
+  for (const [n, h] of [['*Model_Space', MS], ['*Paper_Space', PS]]) { g(0, 'BLOCK_RECORD'); g(5, h); g(330, '1'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, n); g(340, '0'); }
+  for (const b of blocks) { g(0, 'BLOCK_RECORD'); g(5, b.h); g(330, '1'); g(100, 'AcDbSymbolTableRecord'); g(100, 'AcDbBlockTableRecord'); g(2, b.bn); g(340, '0'); }
   g(0, 'ENDTAB'); g(0, 'ENDSEC');
-  const pline = (layer, pts, closed) => { g(0, 'POLYLINE'); g(8, layer); g(66, 1); g(70, closed ? 1 : 0); g(10, 0); g(20, 0); g(30, 0); for (const [x, y] of pts) { g(0, 'VERTEX'); g(8, layer); g(10, x); g(20, y); g(30, 0); } g(0, 'SEQEND'); g(8, layer); };
-  const line = (layer, a, b) => { g(0, 'LINE'); g(8, layer); g(10, a[0]); g(20, a[1]); g(30, 0); g(11, b[0]); g(21, b[1]); g(31, 0); };
-  const circ = (layer, x, y, r) => { g(0, 'CIRCLE'); g(8, layer); g(10, x); g(20, y); g(30, 0); g(40, r); };
-  const text = (layer, x, y, h, s, center) => { g(0, 'TEXT'); g(8, layer); g(10, x); g(20, y); g(30, 0); g(40, h); g(1, dxfText(s)); if (center) { g(72, 1); g(73, 2); g(11, x); g(21, y); g(31, 0); } };
+  // ---- BLOCKS ----
+  const blkBegin = (name, h, paper) => { g(0, 'BLOCK'); g(5, H()); g(330, h); g(100, 'AcDbEntity'); if (paper) g(67, 1); g(8, '0'); g(100, 'AcDbBlockBegin'); g(2, name); g(70, 0); g(10, 0); g(20, 0); g(30, 0); g(3, name); g(1, ''); };
+  const blkEnd = (h, paper) => { g(0, 'ENDBLK'); g(5, H()); g(330, h); g(100, 'AcDbEntity'); if (paper) g(67, 1); g(8, '0'); g(100, 'AcDbBlockEnd'); };
   g(0, 'SECTION'); g(2, 'BLOCKS');
-  const written = new Set();
-  for (const code of used) {
-    const s = symOf(code); const bn = blockNameOf(s); if (written.has(bn)) continue; written.add(bn);
-    g(0, 'BLOCK'); g(8, '0'); g(2, bn); g(70, 0); g(10, 0); g(20, 0); g(30, 0); g(3, bn);
+  blkBegin('*Model_Space', MS, false); blkEnd(MS, false); blkBegin('*Paper_Space', PS, true); blkEnd(PS, true);
+  for (const b of blocks) {
+    const s = b.s; blkBegin(b.bn, b.h, false); const o = { owner: b.h };
     const L = s.leg && legGeom(s.code);
-    if (L) writeLegGeom(g, L);
+    if (L) writeLegGeom(E, b.h, L);
     else {
       const pp = shapePoly(s.shape);
-      if (pp) pline('0', pp.map(([x, y]) => [x * .5, -y * .5]), true); else circ('0', 0, 0, s.shape === 'dot' ? .28 : .42);
-      if (s.shape === 'circleX' || s.shape === 'squareX') { const k = s.shape === 'circleX' ? .3 : .375; line('0', [-k, -k], [k, k]); line('0', [-k, k], [k, -k]); }
-      if (s.shape === 'dot') circ('0', 0, 0, .14);
-      if (s.shape === 'rect') line('0', [-.35, 0], [.35, 0]);
+      if (pp) lwp('0', pp.map(([x, y]) => [x * .5, -y * .5]), true, o); else circ('0', 0, 0, s.shape === 'dot' ? .28 : .42, o);
+      if (s.shape === 'circleX' || s.shape === 'squareX') { const k = s.shape === 'circleX' ? .3 : .375; line('0', [-k, -k], [k, k], o); line('0', [-k, k], [k, -k], o); }
+      if (s.shape === 'dot') circ('0', 0, 0, .14, o);
+      if (s.shape === 'rect') line('0', [-.35, 0], [.35, 0], o);
     }
-    g(0, 'ENDBLK'); g(8, '0');
+    blkEnd(b.h, false);
   }
   g(0, 'ENDSEC');
+  // ---- ENTITIES ----
   g(0, 'SECTION'); g(2, 'ENTITIES');
+  if (img) { // immagine di sfondo per prima: resta sotto tutto il resto
+    const k = ppm(P), px = 1 / k; const [lx, ly] = T(0, P.h);
+    g(0, 'IMAGE'); g(5, IH.ent); g(330, MS); g(100, 'AcDbEntity'); g(8, 'RIL_SFONDO'); g(100, 'AcDbRasterImage'); g(90, 0); g(10, lx); g(20, ly); g(30, 0); g(11, px); g(21, 0); g(31, 0); g(12, 0); g(22, px); g(32, 0); g(13, img.w); g(23, img.h);
+    g(340, IH.def); g(70, 3); g(280, 0); g(281, 50); g(282, 50); g(283, 0); g(360, IH.react); g(71, 1); g(91, 2); g(14, -0.5); g(24, -0.5); g(14, img.w - 0.5); g(24, img.h - 0.5);
+  }
   for (const r of S.rooms.filter(r => r.planId === P.id)) {
-    pline('RIL_LOCALI', r.poly.map(p => T(p[0], p[1])), true);
+    lwp('RIL_LOCALI', r.poly.map(p => T(p[0], p[1])), true);
     const [cx, cy] = T(...polyCentroid(r.poly)); text('RIL_LOCALI_NOMI', cx, cy, 0.25 * U, r.name + (r.h ? ` h=${String(r.h).replace('.', ',')}m` : ''), true);
   }
   const sz = 0.3 * U;
   for (const it of items) {
-    const s = symOf(it.s); const layer = (CATS[s.cat] || CATS.X).layer + (it._rem ? '_RIMOSSI' : it.fate ? FATE_LAYER[it.fate] : techState(it) ? '_PROGETTO' : '') + (it.ok || it._rem ? '' : '_BOZZE');
-    if (it.pts) { pline(layer, it.pts.map(p => T(p[0], p[1])), false); const [mx, my] = T(it.x, it.y); text('RIL_SIGLE', mx, my + 0.1 * U, 0.12 * U, symShort(s) + (famExtra(it) ? ' ' + famExtra(it) : '')); continue; }
+    const s = symOf(it.s); const sfx = (it._rem ? '_RIMOSSI' : it.fate ? FATE_LAYER[it.fate] : techState(it) ? '_PROGETTO' : '') + (it.ok || it._rem ? '' : '_BOZZE'); const layer = (CATS[s.cat] || CATS.X).layer + sfx;
+    if (it.pts) { lwp(layer, it.pts.map(p => T(p[0], p[1])), false); const [mx, my] = T(it.x, it.y); text('RIL_SIGLE', mx, my + 0.1 * U, 0.12 * U, symShort(s) + (famExtra(it) ? ' ' + famExtra(it) : '')); continue; }
     if (isPlate(it)) { // placca: un blocco per ogni frutto, affiancati lungo il muro
-      const ph = itemRot(it), k = ppm(P), n = it.pl.length; plCodes(it).forEach((c, i) => { if (!c) return; const s2 = symOf(c); const off = ((n - 1) / 2 - i) * 0.36 * k; /* posto 1 a sinistra di chi guarda la parete */ const [px, py] = T(it.x + Math.cos(-ph) * off, it.y + Math.sin(-ph) * off); g(0, 'INSERT'); g(8, (CATS[s2.cat] || CATS.X).layer + (it.ok ? '' : '_BOZZE')); g(2, blockNameOf(s2)); g(10, px); g(20, py); g(30, 0); g(41, s2.leg ? U : sz); g(42, s2.leg ? U : sz); g(43, s2.leg ? U : sz); g(50, s2.leg ? +(ph * 180 / Math.PI).toFixed(3) : 0); });
+      const ph = itemRot(it), k = ppm(P), n = it.pl.length; plCodes(it).forEach((c, i) => { if (!c) return; const s2 = symOf(c); const off = ((n - 1) / 2 - i) * 0.36 * k; /* posto 1 a sinistra di chi guarda la parete */ const [px, py] = T(it.x + Math.cos(-ph) * off, it.y + Math.sin(-ph) * off); insert((CATS[s2.cat] || CATS.X).layer + sfx, blockNameOf(s2), px, py, s2.leg ? U : sz, s2.leg ? +(ph * 180 / Math.PI).toFixed(3) : 0); });
       const [x, y] = T(it.x, it.y); text('RIL_SIGLE', x + 0.25 * U, y + 0.05 * U, 0.1 * U, 'placca ' + n + 'P' + (it.h != null ? ' h' + String(it.h).replace('.', ',') : '')); if (it.note) text('RIL_NOTE', x + 0.2 * U, y - 0.15 * U, 0.08 * U, it.note.slice(0, 100)); continue;
     }
     const [x, y] = T(it.x, it.y); const sc = s.leg ? U : sz; const rot = s.leg ? itemRot(it) * 180 / Math.PI : 0;
-    g(0, 'INSERT'); g(8, layer); g(2, blockNameOf(s)); g(10, x); g(20, y); g(30, 0); g(41, sc); g(42, sc); g(43, sc); g(50, +rot.toFixed(3));
+    insert(layer, blockNameOf(s), x, y, sc, +rot.toFixed(3));
     const lab = isQuadroCode(it.s) ? quadroLabel(it) : symShort(s) + (it.tag ? ' ' + it.tag : '');
     text('RIL_SIGLE', x + 0.25 * U, y + 0.05 * U, 0.12 * U, lab + (it.n > 1 ? ' x' + it.n : '') + (it.h != null ? ' h' + String(it.h).replace('.', ',') : ''));
     const nt = [famExtra(it), it.note].filter(Boolean).join(' – '); if (nt) text('RIL_NOTE', x + 0.2 * U, y - 0.15 * U, 0.08 * U, nt.slice(0, 100));
   }
   const wU = P.dxf ? P.dxf.s : ppm(P); // px pianta per unità del disegno
   for (const d of S.draws.filter(d => d.planId === P.id)) for (const st of d.strokes) {
-    g(0, 'POLYLINE'); g(8, 'RIL_DISEGNO'); g(62, aciOf(st.col)); g(66, 1); g(70, 0); g(10, 0); g(20, 0); g(30, 0); const w = +(st.w / wU).toFixed(4); if (w > 0) { g(40, w); g(41, w); }
-    const pw = st.pts.some(p => p.length > 2); // tratto a pressione: ogni vertice ha il suo spessore iniziale e finale
-    st.pts.forEach((p, i) => { const [x, y] = T(p[0], p[1]); g(0, 'VERTEX'); g(8, 'RIL_DISEGNO'); g(10, x); g(20, y); g(30, 0); if (pw && w > 0) { const q = st.pts[i + 1] || p; g(40, +(w * prW(p[2] ?? 0.5)).toFixed(4)); g(41, +(w * prW(q[2] ?? 0.5)).toFixed(4)); } });
-    g(0, 'SEQEND'); g(8, 'RIL_DISEGNO');
+    const w = +(st.w / wU).toFixed(4); const pw = st.pts.some(p => p.length > 2); // tratto a pressione: ogni vertice ha il suo spessore iniziale e finale
+    const vw = pw && w > 0 ? st.pts.map((p, i) => { const q = st.pts[i + 1] || p; return [+(w * prW(p[2] ?? 0.5)).toFixed(4), +(w * prW(q[2] ?? 0.5)).toFixed(4)]; }) : null;
+    lwp('RIL_DISEGNO', st.pts.map(p => T(p[0], p[1])), false, { color: aciOf(st.col), w: w > 0 && !vw ? w : 0, vw });
   }
   for (const it of all.filter(i => i.hint)) { const [x, y] = T(it.x, it.y); circ('RIL_INDIZI', x, y, 0.15 * U); text('RIL_INDIZI', x + 0.2 * U, y - 0.05 * U, 0.1 * U, '! ' + (it.note || 'indizio').slice(0, 90)); }
   for (const n of S.vnotes.filter(n => n.planId === P.id)) { // note audio: cerchio, numero e testo
@@ -200,27 +241,42 @@ function buildDxf(P, pnum) {
     const a = -ph.a; line('RIL_FOTO', [x, y], [x + Math.cos(a) * 0.5 * U, y + Math.sin(a) * 0.5 * U]);
     text('RIL_FOTO', x + 0.15 * U, y - 0.25 * U, 0.12 * U, pnum.get(ph.id) || '');
   }
+  g(0, 'ENDSEC');
+  // ---- OBJECTS ----
+  g(0, 'SECTION'); g(2, 'OBJECTS');
+  g(0, 'DICTIONARY'); g(5, 'C'); g(330, '0'); g(100, 'AcDbDictionary'); g(281, 1); g(3, 'ACAD_GROUP'); g(350, 'D'); g(3, 'ACAD_PLOTSTYLENAME'); g(350, 'E'); if (img) { g(3, 'ACAD_IMAGE_DICT'); g(350, IH.dict); g(3, 'ACAD_IMAGE_VARS'); g(350, IH.vars); }
+  g(0, 'DICTIONARY'); g(5, 'D'); g(330, 'C'); g(100, 'AcDbDictionary'); g(281, 1);
+  g(0, 'ACDBDICTIONARYWDFLT'); g(5, 'E'); g(330, 'C'); g(100, 'AcDbDictionary'); g(281, 1); g(3, 'Normal'); g(350, 'F'); g(100, 'AcDbDictionaryWithDefault'); g(340, 'F');
+  g(0, 'ACDBPLACEHOLDER'); g(5, 'F'); g(330, 'E');
+  if (img) {
+    const px = 1 / ppm(P); const defName = safeName(P.name).toUpperCase() + '_SFONDO';
+    g(0, 'DICTIONARY'); g(5, IH.dict); g(330, 'C'); g(100, 'AcDbDictionary'); g(281, 1); g(3, defName); g(350, IH.def);
+    g(0, 'IMAGEDEF'); g(5, IH.def); g(102, '{ACAD_REACTORS'); g(330, IH.react); g(102, '}'); g(330, IH.dict); g(100, 'AcDbRasterImageDef'); g(90, 0); g(1, img.file); g(10, img.w); g(20, img.h); g(11, px); g(21, px); g(280, 1); g(281, 0);
+    g(0, 'IMAGEDEF_REACTOR'); g(5, IH.react); g(330, IH.ent); g(100, 'AcDbRasterImageDefReactor'); g(90, 2); g(330, IH.ent);
+    g(0, 'RASTERVARIABLES'); g(5, IH.vars); g(330, 'C'); g(100, 'AcDbRasterVariables'); g(90, 0); g(70, 1); g(71, 1); g(72, 0);
+  }
   g(0, 'ENDSEC'); g(0, 'EOF');
+  out[seedAt] = (hs + 16).toString(16).toUpperCase(); // $HANDSEED: oltre l'ultimo handle usato
   return out.join('\r\n') + '\r\n';
 }
 
 const blockNameOf = s => s.leg ? (s.block || s.code) : 'RIL_' + safeName(s.code).toUpperCase();
 const ACI_TAB = [[1, 255, 0, 0], [2, 255, 255, 0], [3, 0, 255, 0], [4, 0, 255, 255], [5, 0, 0, 255], [6, 255, 0, 255], [7, 255, 255, 255], [8, 128, 128, 128], [9, 192, 192, 192], [30, 255, 127, 0], [40, 255, 191, 0], [90, 63, 255, 0], [140, 0, 191, 255], [150, 0, 127, 255], [160, 0, 63, 255], [170, 0, 0, 191], [174, 94, 103, 175], [178, 41, 49, 137]];
 function aciOf(hex) { const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); let best = 7, bd = Infinity; for (const [a, R, G, B] of ACI_TAB) { const d = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2; if (d < bd) { bd = d; best = a; } } return best; }
-function writeLegGeom(g, L) { // geometria del blocco della legenda (metri, origine = punto di inserimento)
+function writeLegGeom(E, owner, L) { // geometria del blocco della legenda (metri, origine = punto di inserimento), dentro il blocco `owner`
   const convex = q => { let sg = 0; const n = q.length / 2; for (let i = 0; i < n; i++) { const ax = q[2 * i], ay = q[2 * i + 1], bx = q[(2 * i + 2) % q.length], by = q[(2 * i + 3) % q.length], cx = q[(2 * i + 4) % q.length], cy = q[(2 * i + 5) % q.length]; const c = (bx - ax) * (cy - by) - (by - ay) * (cx - bx); if (Math.abs(c) < 1e-12) continue; const s = Math.sign(c); if (sg && s !== sg) return false; sg = s; } return true; };
-  const solid = (c, a, b, d, e) => { g(0, 'SOLID'); g(8, '0'); g(62, c); g(10, a[0]); g(20, a[1]); g(30, 0); g(11, b[0]); g(21, b[1]); g(31, 0); g(12, e[0]); g(22, e[1]); g(32, 0); g(13, d[0]); g(23, d[1]); g(33, 0); };
+  const pairs = d => { const o = []; for (let i = 0; i < d.length; i += 2) o.push([d[i], d[i + 1]]); return o; };
   for (const p of L.g) {
-    const c = aciOf(p.c);
-    if (p.t === 'L') { g(0, 'LINE'); g(8, '0'); g(62, c); g(10, p.d[0]); g(20, p.d[1]); g(30, 0); g(11, p.d[2]); g(21, p.d[3]); g(31, 0); }
-    else if (p.t === 'P' || (p.t === 'F' && false)) { g(0, 'POLYLINE'); g(8, '0'); g(62, c); g(66, 1); g(70, p.z ? 1 : 0); g(10, 0); g(20, 0); g(30, 0); for (let i = 0; i < p.d.length; i += 2) { g(0, 'VERTEX'); g(8, '0'); g(10, p.d[i]); g(20, p.d[i + 1]); g(30, 0); } g(0, 'SEQEND'); g(8, '0'); }
+    const c = aciOf(p.c), o = { owner, color: c };
+    if (p.t === 'L') E.line('0', [p.d[0], p.d[1]], [p.d[2], p.d[3]], o);
+    else if (p.t === 'P') E.lwp('0', pairs(p.d), !!p.z, o);
     else if (p.t === 'F') for (const q of p.d) {
       const n = q.length / 2; const P = i => [q[2 * i], q[2 * i + 1]];
-      if (n === 3) solid(c, P(0), P(1), P(2), P(2)); else if (n === 4) solid(c, P(0), P(1), P(2), P(3));
-      else if (convex(q)) for (let i = 1; i < n - 1; i++) solid(c, P(0), P(i), P(i + 1), P(i + 1));
-      else { g(0, 'POLYLINE'); g(8, '0'); g(62, c); g(66, 1); g(70, 1); g(10, 0); g(20, 0); g(30, 0); for (let i = 0; i < n; i++) { g(0, 'VERTEX'); g(8, '0'); g(10, q[2 * i]); g(20, q[2 * i + 1]); g(30, 0); } g(0, 'SEQEND'); g(8, '0'); }
+      if (n === 3) E.solid('0', c, P(0), P(1), P(2), P(2), owner); else if (n === 4) E.solid('0', c, P(0), P(1), P(2), P(3), owner);
+      else if (convex(q)) for (let i = 1; i < n - 1; i++) E.solid('0', c, P(0), P(i), P(i + 1), P(i + 1), owner);
+      else E.lwp('0', pairs(q), true, o);
     }
-    else if (p.t === 'T') { g(0, 'TEXT'); g(8, '0'); g(62, c); g(10, p.x); g(20, p.y); g(30, 0); g(40, p.h); g(1, dxfText(p.s)); if (p.r) g(50, p.r); if (p.w && p.w !== 1) g(41, p.w); if (p.ha || p.va) { if (p.ha) g(72, p.ha); g(11, p.x); g(21, p.y); g(31, 0); if (p.va) g(73, p.va); } }
+    else if (p.t === 'T') E.text('0', p.x, p.y, p.h, p.s, false, { owner, color: c, rot: p.r || 0, wf: p.w, ha: p.ha || 0, va: p.va || 0 });
   }
 }
 
@@ -266,10 +322,12 @@ async function annotatedPng(P, pnum) {
 async function exportZip(withPhotos, prog, tag = 'rilievo') {
   await needLib('zip'); const zip = new JSZip(); const sv = S.sv; const pnum = photoNumbers(); const P2 = id => planOf(id)?.name || '';
   const rn = id => roomById(id)?.name || '';
-  zip.file('LEGGIMI.txt', `Rilievo elettrico: ${sv.name}\r\nCliente: ${sv.client || ''}\r\nIndirizzo: ${sv.address || ''}\r\nEsportato: ${new Date().toLocaleString('it-IT')}\r\n\r\nDXF: un file per tavola. Layer RIL_* per categoria (RIL_*_BOZZE = bozze AI non confermate), blocchi con i nomi della tua legenda (inseriti in scala 1:1 in metri, ruotati sul muro: se li ridefinisci con la tua libreria si aggiornano tutti), RIL_FOTO = punti di scatto con numero foto, RIL_NOTE_AUDIO = note audio N1… (file nella cartella audio, elenco in csv/note_audio.csv).\r\nSe la tavola era un DXF le coordinate coincidono con l'originale; se era PDF/immagine sono in metri con origine in alto a sinistra (allinea con il comando ALLINEA).\r\nCSV: separatore punto e virgola, apribili con Excel.\r\n`);
+  zip.file('LEGGIMI.txt', `Rilievo elettrico: ${sv.name}\r\nCliente: ${sv.client || ''}\r\nIndirizzo: ${sv.address || ''}\r\nEsportato: ${new Date().toLocaleString('it-IT')}\r\n\r\nDXF: un file per tavola. Layer RIL_* per categoria (RIL_*_BOZZE = bozze AI non confermate), blocchi con i nomi della tua legenda (inseriti in scala 1:1 in metri, ruotati sul muro: se li ridefinisci con la tua libreria si aggiornano tutti), RIL_FOTO = punti di scatto con numero foto, RIL_NOTE_AUDIO = note audio N1… (file nella cartella audio, elenco in csv/note_audio.csv).\r\nSe la tavola era un DXF le coordinate coincidono con l'originale; se era PDF/immagine sono in metri con origine in alto a sinistra (allinea con il comando ALLINEA) e il disegno di partenza è agganciato sotto il rilievo come immagine (file *_sfondo accanto al DXF, da tenere nella stessa cartella; layer RIL_SFONDO: spegnilo o cancella l'immagine quando non serve più).\r\nCSV: separatore punto e virgola, apribili con Excel.\r\n`);
   for (const P of sv.plans) {
     prog && prog('DXF ' + P.name + '…');
-    zip.file(`dxf/${safeName(P.name)}_rilievo.dxf`, buildDxf(P, pnum));
+    let img = null;
+    if (!P.dxf) { try { const pb = await getBlob('plan_' + P.id, P.asset); const ext = /jpe?g/.test(pb.type) ? 'jpg' : 'png'; img = { file: `${safeName(P.name)}_sfondo.${ext}`, w: P.w, h: P.h }; zip.file('dxf/' + img.file, pb, { compression: 'STORE' }); } catch (e) { console.warn('sfondo DXF non disponibile', e); } } // la tavola (PDF/foto) sotto il rilievo, sul layer RIL_SFONDO
+    zip.file(`dxf/${safeName(P.name)}_rilievo.dxf`, buildDxf(P, pnum, img));
     try { prog && prog('PNG ' + P.name + '…'); zip.file(`pianta/${safeName(P.name)}_rilievo.png`, await annotatedPng(P, pnum)); } catch (e) { console.warn(e); }
     if (P.id !== S.planId) delete S.planImg[P.id];
   }
