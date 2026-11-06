@@ -271,24 +271,56 @@ function splitItem(it) { // "non è lo stesso oggetto": torna a un oggetto per f
 }
 
 /* ---- orientamento dei simboli a parete: la base del blocco appoggia sul muro ---- */
-function roomFor(planId, x, y) { // a quale locale appartiene un punto messo a mano, SENZA spostarlo: dentro il locale, o sulla linea del muro (entro 20 cm); altrimenti Esterni
-  const r = roomAt(planId, x, y); if (r) return r;
-  const k = ppm(planOf(planId)); let best = null, bd = 0.2 * k;
-  for (const q of S.rooms) { if (q.planId !== planId || !q.poly || q.poly.length < 3) continue; for (let i = 0; i < q.poly.length; i++) { const d = segDist([x, y], q.poly[i], q.poly[(i + 1) % q.poly.length]); if (d < bd) { bd = d; best = q; } } }
-  return best;
+const planRooms = pid => S.rooms.filter(r => r.planId === pid && r.poly && r.poly.length >= 3);
+function wallRotIn(x, y, rooms, k) { // muro più vicino (entro 60 cm): angolo CAD con il simbolo rivolto verso l'interno del suo locale
+  let best = null, bd = 0.6 * k;
+  for (const r of rooms) for (let i = 0; i < r.poly.length; i++) { const a = r.poly[i], b = r.poly[(i + 1) % r.poly.length]; const d = segDist([x, y], a, b); if (d < bd) { bd = d; best = { a, b, r }; } }
+  if (!best) return null;
+  const dx = best.b[0] - best.a[0], dy = best.b[1] - best.a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L;
+  const pr = segProj([x, y], best.a, best.b); if (!pointInPoly(pr[0] + nx * 0.2 * k, pr[1] + ny * 0.2 * k, best.r.poly)) { nx = -nx; ny = -ny; }
+  return Math.atan2(-nx, -ny);
+}
+function footBB(o) { // ingombro del simbolo in metri di simbolo (y verso l'interno del locale)
+  if (isPlate(o)) { const w = 0.36 * o.pl.length; return [-w / 2, -0.08, w / 2, 0.42]; }
+  const s = symOf(o.s); const lg = s.leg && legGeom(s.code); return lg ? lg.bb : [-0.19, -0.19, 0.19, 0.19];
+}
+function footPts(bb, x, y, rot, f) { // punti dell'ingombro disegnato (f = px di pianta per metro di simbolo, come lo vedi a schermo)
+  const c = Math.cos(rot), sn = Math.sin(rot), out = [], N = 10;
+  for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const u = bb[0] + (bb[2] - bb[0]) * (i + 0.5) / N, v = bb[1] + (bb[3] - bb[1]) * (j + 0.5) / N; out.push([x + (u * c - v * sn) * f, y - (u * sn + v * c) * f]); }
+  return out;
+}
+function linePts(pts, n = 40) { // punti a passo costante lungo una linea
+  const seg = []; let tot = 0; for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(l); tot += l; }
+  if (!tot) return [pts[0]]; const out = [];
+  for (let q = 0; q < n; q++) { let t = tot * (q + 0.5) / n, i = 0; while (i < seg.length - 1 && t > seg[i]) { t -= seg[i]; i++; } const a = pts[i], b = pts[i + 1], w = seg[i] ? t / seg[i] : 0; out.push([a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w]); }
+  return out;
+}
+function roomFor(planId, x, y, o) { // a quale locale appartiene un elemento messo a mano, SENZA spostarlo: conta il disegno; se più di metà è fuori dai muri → Esterni
+  const rooms = planRooms(planId); if (!rooms.length) return null;
+  if (!o) return roomAt(planId, x, y);
+  const k = ppm(planOf(planId)), f = LEG_PPM() / (S.view.s || 1), s = symOf(o.s);
+  const line = o.pts && o.pts.length > 1 ? linePts(o.pts) : null, wall = !line && s.mount === 'parete' && s.leg;
+  const bb = line ? null : footBB(o), reach = bb ? Math.max(...[[bb[0], bb[1]], [bb[0], bb[3]], [bb[2], bb[1]], [bb[2], bb[3]]].map(([u, v]) => Math.hypot(u, v))) * f + 0.6 * k : 0;
+  let best = null, bf = -1;
+  for (const r of rooms) {
+    let pts = line;
+    if (!pts) {
+      if (!pointInPoly(x, y, r.poly) && !r.poly.some((p, i) => segDist([x, y], p, r.poly[(i + 1) % r.poly.length]) < reach)) continue;
+      let rot = 0; if (wall) { rot = o.rot != null ? o.rot : wallRotIn(x, y, [r], k); if (rot == null) rot = 0; }
+      pts = footPts(bb, x, y, rot, f);
+    }
+    let n = 0; for (const p of pts) if (pointInPoly(p[0], p[1], r.poly)) n++;
+    const fr = n / pts.length; if (fr > bf) { bf = fr; best = r; }
+  }
+  return bf >= 0.5 ? best : null;
 }
 function itemRot(it) { // angolo CAD (antiorario, radianti)
   if (it.pts || it.hint) return 0; const s = symOf(it.s); if (s.mount !== 'parete' || !s.leg) return 0;
   if (it.rot != null) return it.rot;
   const k = ppm(planOf(it.planId)); const room = roomById(it.roomId);
-  const rooms = room && room.poly ? [room] : S.rooms.filter(r => r.planId === it.planId && r.poly && r.poly.length >= 3);
-  let best = null, bd = 0.6 * k;
-  for (const r of rooms) for (let i = 0; i < r.poly.length; i++) { const a = r.poly[i], b = r.poly[(i + 1) % r.poly.length]; const d = segDist([it.x, it.y], a, b); if (d < bd) { bd = d; best = { a, b, r }; } }
-  if (!best) return 0;
-  const dx = best.b[0] - best.a[0], dy = best.b[1] - best.a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L;
-  const pr = segProj([it.x, it.y], best.a, best.b); if (!pointInPoly(pr[0] + nx * 0.2 * k, pr[1] + ny * 0.2 * k, best.r.poly)) { nx = -nx; ny = -ny; }
-  if (!room && !pointInPoly(it.x, it.y, best.r.poly)) { nx = -nx; ny = -ny; } // fuori dai muri (Esterni): girato verso il muro, cioè 180° rispetto a dentro
-  return Math.atan2(-nx, -ny);
+  const rot = wallRotIn(it.x, it.y, room && room.poly ? [room] : planRooms(it.planId), k); if (rot == null) return 0;
+  if (room) return rot;
+  const r2 = rot + Math.PI; return r2 > Math.PI ? r2 - 2 * Math.PI : r2; // Esterni: girato verso il muro, cioè 180° rispetto a dentro
 }
 
 /* ---- simboli sovrapposti: a ventaglio con linea di richiamo (solo visualizzazione) ---- */

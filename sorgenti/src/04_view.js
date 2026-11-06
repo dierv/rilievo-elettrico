@@ -588,7 +588,7 @@ function startGesture(x0, y0) {
           if (!moved) return;
           if (h.t === 'item') {
             o.lk = true;
-            const r = roomFor(P.id, o.x, o.y); o.roomId = r ? r.id : null; Sync.markItem(o); // resta dove l'hai lasciato
+            const r = roomFor(P.id, o.x, o.y, o); o.roomId = r ? r.id : null; Sync.markItem(o); // resta dove l'hai lasciato; più di metà disegnata fuori dai muri → Esterni
           } else { const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : null; reprojectPhoto(o); Sync.mark('photo:' + o.id); }
           renderPanel(); redraw();
         },
@@ -678,20 +678,20 @@ function finishRoom() {
 function roomGeometryChanged(pid) {
   for (const ph of S.photos) if (ph.planId === pid && ph.x != null) { const r = roomAt(pid, ph.x, ph.y); ph.roomId = r ? r.id : null; }
   for (const ph of S.photos) if (ph.planId === pid && ph.x != null && ph.ai && ph.ai.dets) { reprojectPhoto(ph); Sync.mark('photo:' + ph.id); }
-  for (const it of S.items) if (it.planId === pid) { const r = roomAt(pid, it.x, it.y); const nid = r ? r.id : null; if (nid !== it.roomId) { it.roomId = nid; Sync.markItem(it); } }
+  for (const it of S.items) if (it.planId === pid) { const r = roomFor(pid, it.x, it.y, it); const nid = r ? r.id : null; if (nid !== it.roomId) { it.roomId = nid; Sync.markItem(it); } }
 }
 function symPlace(bx, by) {
   const sym = symOf(S.symSel); const P = curPlan();
   if (sym.mount === 'lineare') { S.tmp.line = S.tmp.line || []; S.tmp.line.push([r1(bx), r1(by)]); renderPalette(); redraw(); return; }
   pushUndo();
-  const r = roomFor(P.id, bx, by); // il punto resta esatto: si decide solo a quale locale appartiene
+  const r = roomFor(P.id, bx, by, { s: sym.code }); // il punto resta esatto: si decide solo a quale locale appartiene (più di metà disegnata fuori → Esterni)
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: sym.code, x: r1(bx), y: r1(by), pts: null, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
   if (closedAt()) it.fate = 'nuovo'; // dopo la chiusura quello che aggiungi a mano è una nuova installazione
   S.items.push(it); Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(sym.code); afterPlace();
 }
 function finishLine() {
   const pts = (S.tmp.line || []); if (pts.length < 2) { toast('Servono almeno 2 punti', true); return; }
-  const P = curPlan(); pushUndo(); const mid = pts[Math.floor(pts.length / 2)]; const r = roomFor(P.id, mid[0], mid[1]);
+  const P = curPlan(); pushUndo(); const mid = pts[Math.floor(pts.length / 2)]; const r = roomFor(P.id, mid[0], mid[1], { s: S.symSel, pts });
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: S.symSel, x: mid[0], y: mid[1], pts, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
   if (closedAt()) it.fate = 'nuovo';
   S.items.push(it); S.tmp = {}; Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(S.symSel); afterPlace();
