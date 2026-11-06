@@ -34,6 +34,9 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 - Se tablet e penna lo supportano, avvicinando la penna allo schermo compare il mirino dove cadrà il punto.
 - Si disattiva in **Impostazioni**.
 
+## Tavola da una foto del disegno cartaceo
+«+ Tavola → Fotografa il disegno» (o un'immagine/scansione da file): trascini i 4 cerchi sugli angoli del foglio, scegli il formato (A4…A0, o un rettangolo di cui sai le misure) e la scala del disegno (1:50, 1:100…): la foto viene raddrizzata (correzione prospettica), pulita come una scansione (ombre e grigio della carta tolti, colori conservati) e la tavola nasce già in scala. Se non sai formato o scala, calibri dopo con lo strumento Scala su una quota nota. «Usa così com'è» salta il raddrizzamento. Le tavole da foto si salvano in JPEG.
+
 ## Durante il sopralluogo
 - **Colore dei locali**: arancione = manca qualcosa (nessuna foto, nessun punto luce, nessun elemento), blu = in lavorazione, verde = rilevato. Nel pannello del locale c'è l'elenco di cosa manca.
 - **Controllo generale** (nel pannello della tavola): elenco dei locali da verificare e foto ancora da analizzare; con doppia conferma **chiude il sopralluogo** e fotografa lo *stato di fatto*. Da lì in poi ogni modifica è una *scelta tecnica*: compare con un distintivo sulla pianta, nel CSV (colonna `Scelta_tecnica`) e nel DXF su layer con suffisso `_PROGETTO` (gli elementi tolti dopo la chiusura finiscono su `_RIMOSSI`); lo stato di fatto chiuso resta sempre consultabile ed esportabile.
@@ -41,6 +44,9 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 - **Barra dei simboli più usati** sotto la pianta (grafica + descrizione), con **timbro** per mettere più volte lo stesso simbolo.
 - **Misura**: con la scala impostata tocca due o più punti (si agganciano agli angoli dei locali): distanza per tratto, totale, e area/perimetro se chiudi il poligono.
 - **Pianta che segue come sei girato**: tasto in basso a destra (o due dita che torcono) per girare la pianta come sei messo tu; **Segui come sono girato** la fa ruotare da sola quando ti giri e, nel tool Foto, un tocco crea la foto verso la parete che hai davanti. Usa il giroscopio (non il nord magnetico, che vicino a ferro e magneti sbaglia): il riferimento è il momento in cui lo attivi; se la pianta si sfasa la raddrizzi con due dita, col cursore o con «Dritta», e da lì riparte. Sui tablet senza giroscopio (per esempio il TCL NXTPAPER 11 Plus) ripiega sulla bussola magnetica, che vicino a ferro e magneti perde anche decine di gradi: il pannello lo dice, e lì conviene raddrizzare spesso o girare la pianta a mano. Serve il permesso ai sensori di movimento del browser (su iPhone/iPad lo chiede la prima volta); dentro Claude i sensori possono essere bloccati, nell'app installata funzionano.
+
+## Esportazioni
+DXF, CSV, PNG e ZIP (backup completo). Il DXF del rilievo (locali, simboli, tratti, note, su layer separati, in metri reali) si esporta qualunque sia l'origine della tavola: DXF, PDF, immagine o foto. Se la tavola viene da un DXF le coordinate sono quelle del disegno originale e il rilievo si sovrappone al DWG; da PDF o foto l'origine è l'angolo della tavola e il disegno di sfondo resta un'immagine (non viene vettorializzato).
 
 ## Riconoscimento AI
 - Funziona con una chiave API Anthropic, da inserire in **Impostazioni**. Resta solo sul tablet.

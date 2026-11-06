@@ -63,7 +63,7 @@ function newSurvey() {
     S.sv = { id: uid('s'), ...f, created: Date.now(), updated: Date.now(), plans: [], legV: LEGENDA.v };
     S.rooms = []; S.items = []; S.photos = []; S.draws = []; S.vnotes = []; S.closure = {}; S.showClosure = false; S.planId = null; S.sel = null; S.undo = [];
     Sync.mark('meta'); showSurvey();
-    setTimeout(() => $('#fPlan').click(), 150);
+    setTimeout(() => addPlanMenu(), 150);
   });
 }
 async function deleteSurvey(id) {
@@ -270,7 +270,8 @@ async function boot() {
   initCanvas(); initPanel(); initViewer(); initPhotoInputs(); initVnInputs();
   $('#hNew').onclick = newSurvey; $('#hLib').onclick = openLibrary; $('#hSet').onclick = openSettings;
   $('#bBack').onclick = goHome; $('#bMenu').onclick = openMenu; $('#bComputo').onclick = openComputo; $('#bUndo').onclick = doUndo;
-  $('#bAddPlan').onclick = () => $('#fPlan').click();
+  $('#bAddPlan').onclick = () => addPlanMenu();
+  $('#fPlanCam').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPlanFile(f, true); };
   $('#planSel').onchange = e => switchPlan(e.target.value);
   $('#fPlan').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importPlanFile(f); };
   $('#fJson').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); };

@@ -13,7 +13,7 @@ const PT_MM = 25.4 / 72;
 function canvasToBlob(c, type = 'image/png', q) { return new Promise(r => c.toBlob(r, type, q)); }
 function newCanvas(w, h, white = true) { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); if (white) { x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); } return c; }
 
-async function importPlanFile(file) {
+async function importPlanFile(file, fromCamera = false) {
   if (!file) return;
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (ext === 'dwg') {
@@ -27,7 +27,7 @@ async function importPlanFile(file) {
   try {
     if (ext === 'pdf' || file.type === 'application/pdf') return await importPdf(file);
     if (ext === 'dxf') return await importDxf(file);
-    if ((file.type || '').startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return await importImage(file);
+    if ((file.type || '').startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'bmp', 'gif'].includes(ext)) return await importImage(file, fromCamera);
     toast('Formato non supportato: usa PDF, DXF o immagine', true);
   } catch (e) { console.error(e); toast('Errore import: ' + (e.message || e), true, 6000); }
 }
@@ -59,13 +59,11 @@ async function importPdf(file) {
     } catch (e) { closeModal(); toast('Errore PDF: ' + (e.message || e), true, 6000); }
   };
 }
-async function importImage(file) {
-  const bmp = await createImageBitmap(file);
-  const L = Math.max(bmp.width, bmp.height), k = Math.min(1, 6144 / L);
-  const c = newCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k));
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  const nm = await askText('Nuova tavola', 'Nome tavola', baseName(file)); if (nm == null) return;
-  await addPlan({ name: nm || baseName(file), src: 'img', canvas: c, ppm: null, srcName: file.name });
+async function importImage(file, fromCamera = false) { // foto del disegno cartaceo o immagine/scansione: raddrizzo, pulisco, scala dal formato del foglio
+  const res = await photoPlanFlow(file, fromCamera); if (!res) return;
+  const def = fromCamera ? 'Tavola ' + (S.sv.plans.length + 1) : baseName(file);
+  const nm = await askText('Nuova tavola', 'Nome tavola', def); if (nm == null) return;
+  await addPlan({ name: nm || def, src: 'img', canvas: res.canvas, ppm: res.ppm, srcName: fromCamera ? 'foto' : file.name, jpeg: true });
 }
 
 /* ---- DXF ---- */
@@ -169,10 +167,10 @@ async function importDxf(file) {
   };
 }
 
-async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName }) {
+async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = false }) {
   const id = uid('pl');
-  let blob = await canvasToBlob(canvas, 'image/png');
-  if (!blob || blob.size > 19 * 1024 * 1024) blob = await canvasToBlob(canvas, 'image/jpeg', 0.9);
+  let blob = jpeg ? null : await canvasToBlob(canvas, 'image/png'); // le foto in JPEG: in PNG peserebbero decine di MB
+  if (!blob || blob.size > 19 * 1024 * 1024) blob = await canvasToBlob(canvas, 'image/jpeg', 0.88);
   const plan = { id, name, src, w: canvas.width, h: canvas.height, ppm: ppmV || null, dxf: dxf || null, srcName, local: true, asset: null, created: Date.now(), projV: 2 };
   S.sv.plans.push(plan);
   await Uploads.add('plan_' + id, blob, 'plan', id);

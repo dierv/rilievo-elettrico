@@ -53,7 +53,7 @@ function renderPanel() {
   if (sel && sel.t === 'room' && roomById(sel.id)) return roomPanel(el, roomById(sel.id));
   if (sel && sel.t === 'draw' && drawById(sel.id)) return drawPanel(el, drawById(sel.id));
   if (sel && sel.t === 'vnote' && vnoteById(sel.id)) return vnotePanel(el, vnoteById(sel.id));
-  if (!P) { el.innerHTML = `<h2>${esc(S.sv.name)}</h2><p class="mut">Carica la prima tavola: PDF, DXF (da AutoCAD) o una foto della pianta.</p><button class="pri" data-act="addPlan" style="width:100%">+ Aggiungi tavola</button>${aiAvailHtml()}`; return; }
+  if (!P) { el.innerHTML = `<h2>${esc(S.sv.name)}</h2><p class="mut">Carica la prima tavola: PDF, DXF (da AutoCAD), un'immagine, oppure fotografa il disegno cartaceo (lo raddrizzi e metti la scala dal formato del foglio).</p><button class="pri" data-act="addPlan" style="width:100%">+ Aggiungi tavola</button>${aiAvailHtml()}`; return; }
   const rooms = S.rooms.filter(r => r.planId === P.id); const all = S.items.filter(i => i.planId === P.id); const its = all.filter(i => !i.hint); const nh = all.length - its.length; const phs = S.photos.filter(p => p.planId === P.id);
   const dr = its.filter(i => !i.ok).length;
   el.innerHTML = `<h2>${esc(P.name)}</h2>
@@ -70,6 +70,7 @@ function renderPanel() {
       <li>Colori dei locali: ${ROOM_LEGEND}. Nel pannello del locale vedi che cosa manca.</li>
       <li><b>Destino</b>: tocca un elemento e scegli <span style="color:#dc2626">da rimuovere</span>, <span style="color:#ea580c">da sostituire</span> o <span style="color:#16a34a">nuovo</span>: compare sulla pianta, nel CSV e su layer DXF separati.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li>
+      <li><b>Tavola da foto</b>: + Tavola → Fotografa il disegno; trascina i 4 cerchi sugli angoli del foglio, scegli formato (A3, A4…) e scala del disegno: la tavola nasce dritta, pulita e in scala.</li>
       <li><b>Misura</b>: tocca due o più punti (si agganciano agli angoli): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li></ol></div>
     <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}</div></div>
@@ -179,7 +180,7 @@ function initPanel() {
     const a = b.dataset.act, id = b.dataset.id, v = b.dataset.v; const sel = S.sel;
     const it = sel && sel.t === 'item' ? itemById(sel.id) : null, ph = sel && sel.t === 'photo' ? photoById(sel.id) : null, rm = sel && sel.t === 'room' ? roomById(sel.id) : null;
     switch (a) {
-      case 'addPlan': $('#fPlan').click(); break;
+      case 'addPlan': addPlanMenu(); break;
       case 'tool': setTool(v); break;
       case 'desel': select(null); break;
       case 'goRoom': { const r = roomById(id); select('room', id); centerOn(...polyCentroid(r.poly)); break; }
