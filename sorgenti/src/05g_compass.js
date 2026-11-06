@@ -49,28 +49,31 @@ const Compass = {
     const vx = ux * wu + zx * wz, vy = uy * wu + zy * wz;
     if (Math.hypot(vx, vy) < 0.02) return null; // tablet inclinato in avanti di 45°: direzione indecidibile, tengo l'ultima
     const kind = e.absolute === true || e.type === 'deviceorientationabsolute' ? 'abs' : 'rel';
-    return { yaw: ((Math.atan2(vx, vy) / D2R) % 360 + 360) % 360, kind }; // gradi in senso orario (dal nord se assoluto, da un riferimento qualsiasi se relativo)
+    return { yaw: ((Math.atan2(vx, vy) / D2R) % 360 + 360) % 360, kind, alpha: e.alpha, tilt: Math.abs(e.beta) + Math.abs(e.gamma) }; // gradi in senso orario (dal nord se assoluto, da un riferimento qualsiasi se relativo)
   },
-  track(kind, raw) { // filtro leggero e continuità: un salto impossibile (ri-azzeramento del sensore) non deve far girare la pianta
-    const now = performance.now(); let t = this[kind];
-    if (!t) { t = this[kind] = { raw, off: 0, yaw: raw, span: 0, t: now }; if (this.h0 && this.h0[kind] == null) this.h0[kind] = raw; return t; } // sorgente comparsa dopo il riferimento: parte da qui
-    let d = wrap180(raw - t.raw); const dt = now - t.t; t.raw = raw; t.t = now;
+  track(kind, r) { // filtro (leggero sul giroscopio, più pesante sulla bussola che è rumorosa) e continuità: un salto impossibile (ri-azzeramento del sensore) non deve far girare la pianta
+    const raw = r.yaw, now = performance.now(); let t = this[kind];
+    if (!t) { t = this[kind] = { raw, off: 0, yaw: raw, span: 0, t: now, n: 1, a: r.alpha, aspan: 0, tilt: r.tilt, tspan: 0 }; if (this.h0 && this.h0[kind] == null) this.h0[kind] = raw; return t; } // sorgente comparsa dopo il riferimento: parte da qui
+    let d = wrap180(raw - t.raw); const dt = now - t.t; t.raw = raw; t.t = now; t.n++;
+    if (r.alpha != null) { t.aspan += Math.abs(wrap180(r.alpha - t.a)); t.a = r.alpha; t.tspan += Math.abs(r.tilt - t.tilt); t.tilt = r.tilt; } // quanto si muove l'alfa grezzo e quanto l'inclinazione
     if (Math.abs(d) > 60 && dt < 150) { t.off -= d; d = 0; } // più di 400°/s: non è una rotazione vera
     t.span += Math.abs(d);
-    t.yaw = (t.yaw + wrap180(raw + t.off - t.yaw) * 0.5 + 360) % 360;
+    t.yaw = (t.yaw + wrap180(raw + t.off - t.yaw) * (kind === 'rel' ? 0.5 : 0.15) + 360) % 360;
     return t;
   },
+  // Senza giroscopio Chrome manda l'evento relativo con alfa sempre esattamente 0 (solo inclinazione dall'accelerometro): lo riconosco e passo alla bussola magnetica
+  relDead() { const r = this.rel, a = this.abs; return !!r && ((r.aspan === 0 && r.n >= 10 && (r.tspan > 5 || (a && a.span > 15))) || (!!a && a.span > 25 && r.aspan < 1)); },
   pick() { // giroscopio se c'è e si muove, altrimenti bussola magnetica
-    const rel = this.rel, abs = this.abs; let s = this.src;
-    if (rel && (s == null || s === 'abs') && !(abs && abs.span > 25 && rel.span < 2)) s = 'rel';
-    if (s === 'rel' && abs && abs.span > 25 && rel.span < 2) s = 'abs'; // il tablet non ha il giroscopio: l'alfa relativo resta fermo
+    const rel = this.rel, abs = this.abs; let s = this.src; const dead = this.relDead();
+    if (rel && (s == null || s === 'abs') && !dead) s = 'rel';
+    if (s === 'rel' && dead && abs) s = 'abs'; // il tablet non ha il giroscopio
     if (s == null && abs) s = 'abs';
     if (s !== this.src) { this.src = s; if (this.h0 && this.h0[s] == null) this.h0 = null; renderRotPanel(); } // cambio sorgente: continuo dal suo riferimento, se non c'è lo riprendo
     return this.src ? this[this.src] : null;
   },
   onEvent(e) {
     const r = this.yawOf(e); if (!r) return;
-    this.track(r.kind, r.yaw); const t = this.pick(); if (!t) return;
+    this.track(r.kind, r); const t = this.pick(); if (!t) return;
     this.yaw = t.yaw; this.heading = this.src === 'abs' ? t.yaw : null;
     if (!this.on || this.hold) return;
     if (this.h0 == null || this.h0[this.src] == null || this.status !== 'on') { if (this.h0 == null || this.h0[this.src] == null) this.anchor(); this.status = 'on'; renderRotPanel(); return; }
@@ -84,7 +87,7 @@ function toggleRotPanel() { const p = $('#rotPanel'); if (p.classList.contains('
 function renderRotPanel() {
   const p = $('#rotPanel'); if (!p || p.classList.contains('hide')) return;
   const deg = Math.round(vr() * 180 / Math.PI);
-  const src = Compass.on && Compass.status === 'on' ? (Compass.src === 'rel' ? ' • giroscopio' : ' • bussola magnetica (meno precisa vicino a ferro e magneti)') : '';
+  const src = Compass.on && Compass.status === 'on' ? (Compass.src === 'rel' ? ' • giroscopio' : ' • bussola magnetica: questo tablet non ha il giroscopio, quindi è meno precisa (ferro e magneti la disturbano)') : '';
   p.innerHTML = `<div class="row" style="align-items:center"><b style="flex:1">Rotazione pianta</b><span class="mut small" data-deg>${deg}°</span><button class="sm ghost" data-r="x" style="flex:none">✕</button></div>
     <input type="range" min="-180" max="180" step="1" value="${deg}" data-r="slider">
     <div class="row" style="gap:6px;margin-top:4px"><button class="sm" data-r="-90">⟲ 90°</button><button class="sm" data-r="0">Dritta</button><button class="sm" data-r="90">⟳ 90°</button></div>
