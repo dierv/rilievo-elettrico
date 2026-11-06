@@ -287,6 +287,7 @@ function itemRot(it) { // angolo CAD (antiorario, radianti)
   if (!best) return 0;
   const dx = best.b[0] - best.a[0], dy = best.b[1] - best.a[1], L = Math.hypot(dx, dy) || 1; let nx = -dy / L, ny = dx / L;
   const pr = segProj([it.x, it.y], best.a, best.b); if (!pointInPoly(pr[0] + nx * 0.2 * k, pr[1] + ny * 0.2 * k, best.r.poly)) { nx = -nx; ny = -ny; }
+  if (!room && !pointInPoly(it.x, it.y, best.r.poly)) { nx = -nx; ny = -ny; } // fuori dai muri (Esterni): girato verso il muro, cioè 180° rispetto a dentro
   return Math.atan2(-nx, -ny);
 }
 
