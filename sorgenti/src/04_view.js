@@ -323,7 +323,7 @@ function fingerGesture(x0, y0) { // penna in uso: il dito sposta la pianta; nell
 function toolSnap() { // come si aggancia il punto per lo strumento attivo (uguale col dito, con la penna e col mirino sospeso)
   const P = curPlan();
   if (S.tool === 'room') { const poly = S.tmp.poly || []; return (bx, by) => snapRoomPoint(bx, by, { prev: poly[poly.length - 1], first: poly.length >= 3 ? poly[0] : null }); }
-  if (S.tool === 'sym') { const sym = symOf(S.symSel); return (bx, by) => { if (sym.mount === 'parete' || sym.mount === 'lineare') { const w = snapToRoomWall(P.id, bx, by, sym.mount === 'lineare' ? 0.4 : 0.6); if (w) return { x: w.x, y: w.y, mag: 'wall' }; } return { x: bx, y: by }; }; }
+  if (S.tool === 'sym') return null; // simboli: sempre nel punto esatto del dito o della penna, mai agganciati
   if (S.tool === 'meas') return measSnap;
   return null;
 }
@@ -588,8 +588,7 @@ function startGesture(x0, y0) {
           if (!moved) return;
           if (h.t === 'item') {
             o.lk = true;
-            if (!o.pts && symOf(o.s).mount === 'parete') { const w = snapToRoomWall(P.id, o.x, o.y, 0.6); if (w) { o.x = r1(w.x); o.y = r1(w.y); } }
-            const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : null; Sync.markItem(o);
+            const r = roomFor(P.id, o.x, o.y); o.roomId = r ? r.id : null; Sync.markItem(o); // resta dove l'hai lasciato
           } else { const r = roomAt(P.id, o.x, o.y); o.roomId = r ? r.id : null; reprojectPhoto(o); Sync.mark('photo:' + o.id); }
           renderPanel(); redraw();
         },
@@ -685,15 +684,14 @@ function symPlace(bx, by) {
   const sym = symOf(S.symSel); const P = curPlan();
   if (sym.mount === 'lineare') { S.tmp.line = S.tmp.line || []; S.tmp.line.push([r1(bx), r1(by)]); renderPalette(); redraw(); return; }
   pushUndo();
-  if (sym.mount === 'parete') { const w = snapToRoomWall(P.id, bx, by, 0.6); if (w) { bx = w.x; by = w.y; } }
-  const r = roomAt(P.id, bx, by);
+  const r = roomFor(P.id, bx, by); // il punto resta esatto: si decide solo a quale locale appartiene
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: sym.code, x: r1(bx), y: r1(by), pts: null, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
   if (closedAt()) it.fate = 'nuovo'; // dopo la chiusura quello che aggiungi a mano è una nuova installazione
   S.items.push(it); Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(sym.code); afterPlace();
 }
 function finishLine() {
   const pts = (S.tmp.line || []); if (pts.length < 2) { toast('Servono almeno 2 punti', true); return; }
-  const P = curPlan(); pushUndo(); const mid = pts[Math.floor(pts.length / 2)]; const r = roomAt(P.id, mid[0], mid[1]);
+  const P = curPlan(); pushUndo(); const mid = pts[Math.floor(pts.length / 2)]; const r = roomFor(P.id, mid[0], mid[1]);
   const it = { id: uid('i'), planId: P.id, photoId: null, roomId: r ? r.id : null, s: S.symSel, x: mid[0], y: mid[1], pts, d: null, src: 'man', ok: true, lk: true, n: 1, h: null, note: '', conf: 1 };
   if (closedAt()) it.fate = 'nuovo';
   S.items.push(it); S.tmp = {}; Sync.markItem(it); S.sel = { t: 'item', id: it.id }; noteSymUse(S.symSel); afterPlace();

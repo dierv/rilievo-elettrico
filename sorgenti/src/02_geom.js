@@ -271,6 +271,12 @@ function splitItem(it) { // "non è lo stesso oggetto": torna a un oggetto per f
 }
 
 /* ---- orientamento dei simboli a parete: la base del blocco appoggia sul muro ---- */
+function roomFor(planId, x, y) { // a quale locale appartiene un punto messo a mano, SENZA spostarlo: dentro il locale, o sulla linea del muro (entro 20 cm); altrimenti Esterni
+  const r = roomAt(planId, x, y); if (r) return r;
+  const k = ppm(planOf(planId)); let best = null, bd = 0.2 * k;
+  for (const q of S.rooms) { if (q.planId !== planId || !q.poly || q.poly.length < 3) continue; for (let i = 0; i < q.poly.length; i++) { const d = segDist([x, y], q.poly[i], q.poly[(i + 1) % q.poly.length]); if (d < bd) { bd = d; best = q; } } }
+  return best;
+}
 function itemRot(it) { // angolo CAD (antiorario, radianti)
   if (it.pts || it.hint) return 0; const s = symOf(it.s); if (s.mount !== 'parete' || !s.leg) return 0;
   if (it.rot != null) return it.rot;
