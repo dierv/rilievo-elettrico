@@ -181,8 +181,8 @@ async function configured(options = {}) {
     IDB.tx = (store, mode, fn) => PwaCloud.transaction(IDB.db, store, mode, fn);
     Sync.drain = async () => true;
     PwaCloud.refresh = () => {};
-    PwaCloud.refreshApplied = async () => {};
   `);
+  if (!options.realEditor) h.evaluate('PwaCloud.refreshApplied = async () => {};');
   h.cloud = h.evaluate('PwaCloud');
   h.idb = h.evaluate('IDB');
   h.sync = h.evaluate('Sync');
@@ -195,15 +195,49 @@ async function configured(options = {}) {
     return h.idb.db;
   };
   if (options.install) {
+    if (options.realEditor) h.load('04_view.js');
     h.load('08_home.js');
     for (const name of ['importPlanFile', 'addPhotos', 'runAI', 'readQuadroDet', 'withClosureData', 'photoPlanFlow', 'vnAudioBlob']) h.context[name] = async () => {};
     h.context.vnoteById = id => h.evaluate('S').vnotes.find(note => note.id === id);
     h.context.AudURL = new Map();
-    h.evaluate(`
-      renderHome = () => {};
-      showSurvey = () => {};
-      PwaCloud.install();
-    `);
+    h.evaluate('renderHome = () => {};');
+    if (options.realEditor) {
+      // Exercise the real openSurvey/showSurvey/switchPlan/fitView chain. Only
+      // image decoding and visual output are replaced with controlled surfaces.
+      h.imageWaiters = new Map();
+      h.events.imageStarts = [];
+      h.events.panels = [];
+      h.events.rotationUpdates = 0;
+      h.context.loadPlanImage = async id => {
+        const state = h.evaluate('S');
+        if (state.planImg[id]) return state.planImg[id];
+        h.events.imageStarts.push(id);
+        const waiting = h.imageWaiters.get(id);
+        if (waiting) {
+          h.imageWaiters.delete(id);
+          waiting.entered.resolve();
+          await waiting.release.promise;
+        }
+        const plan = state.sv.plans.find(value => value.id === id);
+        if (!plan) throw new Error('Tavola non più presente');
+        return (state.planImg[id] = { w: plan.w, h: plan.h, cb: [0, 0, plan.w, plan.h] });
+      };
+      h.holdImage = id => {
+        const waiting = { entered: deferred(), release: deferred() };
+        h.imageWaiters.set(id, waiting);
+        return waiting;
+      };
+      for (const name of ['renderTools', 'renderPalette', 'redraw', 'aiBadge', 'updateHint']) h.context[name] = () => {};
+      h.context.renderPanel = () => {
+        const state = h.evaluate('S');
+        h.events.panels.push(structuredClone({ planId: state.planId, selection: state.sel,
+          roomName: state.rooms.find(room => room.id === state.sel?.id)?.name }));
+      };
+      h.context.rotBtnUpdate = h.context.rotPanelSync = () => { h.events.rotationUpdates++; };
+      const canvas = h.context.document.querySelector('#cv');
+      canvas.clientWidth = 800; canvas.clientHeight = 600;
+    } else h.evaluate('showSurvey = () => {};');
+    h.evaluate('PwaCloud.install();');
   }
   return h;
 }
@@ -730,4 +764,161 @@ test('L’avvio autenticato usa il backend congelato e attende il server prima d
   assert.equal(h.cloud.describe().text, 'Sincronizzato ✓');
   assert.equal(h.cloud.error, '');
   assert.equal(h.cloud.engine.status().error, null);
+});
+
+function editorProject() {
+  return {
+    plans: [
+      { id: 'p1', name: 'Piano terra', w: 1000, h: 800, projV: 2 },
+      { id: 'p2', name: 'Primo piano', w: 2000, h: 1000, projV: 2 },
+    ],
+    rooms: [{ id: 'r2', planId: 'p2', name: 'Stanza originale', poly: [[10, 10], [100, 10], [100, 100]] }],
+  };
+}
+
+async function writeEditorProject(h, project) {
+  const root = 'data/users/local/s1';
+  for (const row of await h.idb.all('docs')) {
+    if (row.path === root || row.path.startsWith(root + '/')) await h.idb.del('docs', row.path);
+  }
+  const row = surveyRow('s1', 'Impianto aperto', structuredClone(project.plans));
+  row.data.legV = 1;
+  row.dirty = false;
+  await h.idb.put('docs', row);
+  for (const plan of project.plans) {
+    await h.idb.put('docs', { path: root + '/plans/' + plan.id, sid: 's1', dirty: false,
+      data: { type: 'plan', id: plan.id, rooms: structuredClone(project.rooms.filter(room => room.planId === plan.id)), items: [], draws: [], vnotes: [] } });
+  }
+}
+
+async function openEditor(t) {
+  const h = await configured({ install: true, realEditor: true });
+  t.after(() => h.close());
+  await h.select();
+  const project = editorProject();
+  await writeEditorProject(h, project);
+  await h.evaluate('openSurvey("s1")');
+  await h.evaluate('switchPlan("p2")');
+  h.sync.dirty.clear(); h.sync.dels.clear();
+  h.evaluate('clearTimeout(Sync.timer);');
+  const state = h.evaluate('S');
+  state.sel = { t: 'room', id: 'r2' };
+  state.view = { s: 2.75, tx: -331, ty: 174, r: 0.62 };
+  state.undo = [{ previous: 'Versione precedente all’aggiornamento remoto' }];
+  return { h, state, project };
+}
+
+test('L’aggiornamento remoto mantiene stanza e vista dopo tutti i caricamenti asincroni delle tavole', async t => {
+  const { h, state, project } = await openEditor(t);
+  const view = structuredClone(state.view);
+  project.rooms[0].name = 'Stanza aggiornata dall’altro dispositivo';
+  await writeEditorProject(h, project);
+  const waiting = h.holdImage('p1');
+  let completed = false;
+  const refreshing = h.cloud.refreshApplied('s1', { deleted: false }).then(() => { completed = true; });
+  await waiting.entered.promise;
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(completed, false, 'Il caricamento iniziato da showSurvey deve terminare prima del ripristino');
+  } finally {
+    waiting.release.resolve();
+    await refreshing;
+  }
+  assert.equal(state.planId, 'p2');
+  assert.deepEqual(structuredClone(state.sel), { t: 'room', id: 'r2' });
+  assert.deepEqual(structuredClone(state.view), view);
+  assert.equal(state.rooms[0].name, 'Stanza aggiornata dall’altro dispositivo');
+  assert.equal(state.undo.length, 0, 'L’annullamento non deve reintrodurre dati della vecchia revisione');
+  assert.equal(h.events.panels.at(-1).roomName, 'Stanza aggiornata dall’altro dispositivo');
+  assert.deepEqual(h.events.panels.at(-1).selection, { t: 'room', id: 'r2' });
+  assert.ok(h.events.rotationUpdates > 0);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(structuredClone(state.view), view, 'Nessun fit tardivo deve cambiare la vista ripristinata');
+});
+
+test('Una tavola ancora in caricamento rinvia l’applicazione remota senza sostituire i dati locali', async t => {
+  const { h } = await openEditor(t);
+  await h.idb.put('cloud', { id: 's1', version: 1, hash: 'old', base: { rev: 1, hash: 'old' } });
+  const waiting = h.holdImage('p1');
+  const navigation = h.evaluate('switchPlan("p1")');
+  await waiting.entered.promise;
+  try {
+    assert.equal(h.cloud.remoteApplyBusy(), true);
+    const result = await h.cloud.localCommit('s1', 1, {
+      snapshot: null, deleted: true, hash: '', base: { rev: 2, deleted: true, hash: '' },
+    });
+    assert.equal(result, null);
+    assert.ok(await h.idb.get('docs', 'data/users/local/s1'));
+    assert.equal((await h.idb.get('cloud', 's1')).version, 1);
+  } finally {
+    waiting.release.resolve();
+    await navigation;
+  }
+  assert.equal(h.cloud.remoteApplyBusy(), false);
+});
+
+for (const change of ['eliminata', 'spostata']) {
+  test(`La stanza ${change} nella copia remota non lascia una selezione obsoleta`, async t => {
+    const { h, state, project } = await openEditor(t);
+    const view = structuredClone(state.view);
+    if (change === 'eliminata') project.rooms = [];
+    else project.rooms[0].planId = 'p1';
+    await writeEditorProject(h, project);
+    await h.cloud.refreshApplied('s1', { deleted: false });
+    assert.equal(state.planId, 'p2');
+    assert.equal(state.sel, null);
+    assert.deepEqual(structuredClone(state.view), view);
+    assert.equal(h.events.panels.at(-1).selection, null);
+  });
+}
+
+test('Se la tavola aperta viene eliminata, l’aggiornamento remoto inquadra quella rimasta', async t => {
+  const { h, state, project } = await openEditor(t);
+  project.plans = project.plans.filter(plan => plan.id === 'p1');
+  project.rooms = [];
+  await writeEditorProject(h, project);
+  await h.cloud.refreshApplied('s1', { deleted: false });
+  assert.equal(state.planId, 'p1');
+  assert.equal(state.sel, null);
+  assert.deepEqual(structuredClone(state.view), { s: 0.7, tx: 50, ty: 20, r: 0 });
+});
+
+test('Una tavola ridimensionata riceve una nuova inquadratura invece della vecchia vista', async t => {
+  const { h, state, project } = await openEditor(t);
+  Object.assign(project.plans[1], { w: 4000, h: 2000 });
+  await writeEditorProject(h, project);
+  await h.cloud.refreshApplied('s1', { deleted: false });
+  assert.equal(state.planId, 'p2');
+  assert.deepEqual(structuredClone(state.sel), { t: 'room', id: 'r2' });
+  assert.deepEqual(structuredClone(state.view), { s: 0.19, tx: 20, ty: 110, r: 0 });
+});
+
+test('Una vista precedente non valida non viene ripristinata dopo l’aggiornamento remoto', async t => {
+  const { h, state, project } = await openEditor(t);
+  state.view = { s: -1, tx: Infinity, ty: 174, r: NaN };
+  await writeEditorProject(h, project);
+  await h.cloud.refreshApplied('s1', { deleted: false });
+  assert.equal(state.planId, 'p2');
+  assert.deepEqual(structuredClone(state.view), { s: 0.38, tx: 20, ty: 110, r: 0 });
+  assert.deepEqual(structuredClone(state.sel), { t: 'room', id: 'r2' });
+});
+
+test('Un progetto remoto senza tavole si apre senza conservare la selezione precedente', async t => {
+  const { h, state } = await openEditor(t);
+  await writeEditorProject(h, { plans: [], rooms: [] });
+  await h.cloud.refreshApplied('s1', { deleted: false });
+  assert.equal(state.planId, null);
+  assert.equal(state.sel, null);
+  assert.equal(state.sv.id, 's1');
+  assert.equal(state.undo.length, 0);
+});
+
+test('La normale navigazione tra tavole continua a inquadrare la pianta e azzerare la selezione', async t => {
+  const { h, state } = await openEditor(t);
+  state.view.r = 0;
+  await h.evaluate('switchPlan("p1")');
+  assert.equal(state.planId, 'p1');
+  assert.equal(state.sel, null);
+  assert.deepEqual(structuredClone(state.view), { s: 0.7, tx: 50, ty: 20, r: 0 });
+  assert.equal(h.cloud.remoteApplyBusy(), false);
 });

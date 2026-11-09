@@ -1,8 +1,8 @@
 # Sopralux – accesso Google
 
-L'accesso Google della PWA è stato confermato funzionante dall'utente. Lo stesso account identifica l'archivio locale e la copia privata nel cloud: entrando su un altro dispositivo, l'app sincronizza sopralluoghi, allegati e libreria personale dei simboli.
+L'utente ha confermato che l'accesso Google e la sincronizzazione della PWA funzionano sui propri dispositivi. Lo stesso account identifica l'archivio locale e la copia privata nel cloud: entrando su un altro dispositivo, l'app sincronizza sopralluoghi, allegati e libreria personale dei simboli.
 
-Firestore e Storage del progetto sono stati verificati in `europe-west8` e CORS è stato applicato all'origine della PWA. Comportamento, regole, limiti e verifiche sono descritti in [Sincronizzazione tra dispositivi](FIREBASE_SINCRONIZZAZIONE.md). La prova completa di sincronizzazione su due dispositivi reali resta da eseguire.
+Firestore e Storage del progetto sono stati verificati in `europe-west8` e CORS è stato applicato all'origine della PWA. Comportamento, regole, limiti e verifiche sono descritti in [Sincronizzazione tra dispositivi](FIREBASE_SINCRONIZZAZIONE.md). La conferma dell'utente riguarda l'uso provato: resta da completare la verifica sistematica dei casi offline, dei conflitti e degli allegati.
 
 ## Cosa comprende l'accesso
 
@@ -56,7 +56,7 @@ Test dell'accesso, senza servizi cloud o dati reali:
 node --test test/auth.test.cjs
 ```
 
-La verifica automatica della release comprende **86 test applicativi superati** e **8 scenari delle regole superati negli emulatori**. Questi risultati non sostituiscono la prova reale su PC e tablet. Per rigenerare il solo SDK, vedere [sorgenti/firebase/README.md](../sorgenti/firebase/README.md). I comandi e i casi coperti sono nella [guida alla sincronizzazione](FIREBASE_SINCRONIZZAZIONE.md).
+La verifica automatica della release iniziale della sincronizzazione comprende **86 test applicativi superati** e **8 scenari delle regole superati negli emulatori**. La conferma successiva dell'utente sui dispositivi reali è distinta da questi test automatici. Per rigenerare il solo SDK, vedere [sorgenti/firebase/README.md](../sorgenti/firebase/README.md). I comandi e i casi coperti sono nella [guida alla sincronizzazione](FIREBASE_SINCRONIZZAZIONE.md).
 
 ## Riferimenti
 

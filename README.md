@@ -32,7 +32,7 @@ Premi **Accedi con Google** e usa lo stesso account su PC e tablet per ritrovare
 - Al primo accesso, i dati locali precedenti vengono copiati nell'archivio dell'account, conservando l'originale. Gli altri account e l'uso senza accesso hanno archivi distinti.
 - La libreria personale dei simboli segue lo stesso account. La chiave Anthropic e i collegamenti alle cartelle rimangono sul dispositivo.
 
-Firestore e Storage sono predisposti nella regione `europe-west8`; CORS è stato applicato e verificato per `https://dierv.github.io`. Sono superati **86 test applicativi e 8 scenari delle regole negli emulatori**. La prova completa su due dispositivi reali resta da eseguire; l'accesso Google è già stato confermato funzionante dall'utente.
+Firestore e Storage sono predisposti nella regione `europe-west8`; CORS è stato applicato e verificato per `https://dierv.github.io`. La release iniziale della sincronizzazione ha superato **86 test applicativi e 8 scenari delle regole negli emulatori**. **L'utente ha confermato che l'accesso Google e la sincronizzazione funzionano sui propri dispositivi.** Restano da completare le verifiche sistematiche dei casi offline, dei conflitti e degli allegati.
 
 Configurazione, limiti e verifiche: [Accesso Google](docs/FIREBASE_ACCESSO.md) e [Sincronizzazione](docs/FIREBASE_SINCRONIZZAZIONE.md). Il bundle Firebase è incluso nella cache offline; la build Claude mantiene il proprio salvataggio e non carica Firebase.
 
