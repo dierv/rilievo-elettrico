@@ -1,6 +1,8 @@
 # Sopralux – sincronizzazione tra dispositivi
 
-**Stato del ramo `feat/firebase-sync`: codice implementato e verificato localmente; attivazione in produzione da completare.** La release attualmente pubblicata include l'accesso Google, già confermato funzionante. Prima di pubblicare questo ramo occorre verificare i servizi reali, applicare regole e CORS, quindi provare la sincronizzazione fra due dispositivi.
+La PWA sincronizza sopralluoghi, allegati e libreria personale dei simboli fra dispositivi che usano lo stesso account Google. Il progetto Firebase reale, Firestore, Storage e CORS sono stati verificati; l'accesso Google è già stato confermato funzionante dall'utente.
+
+Sono superati **86 test applicativi e 8 scenari delle regole negli emulatori**. **La prova completa su due dispositivi reali resta da eseguire**: i casi da verificare sono elencati in fondo a questa guida.
 
 ## Comportamento concordato
 
@@ -49,23 +51,24 @@ Il limite è **20 MiB per singolo file** e **20 MiB per copia JSON dei dati**. S
 
 La cancellazione di un sopralluogo è una revisione con `del: true`. Le vecchie copie e i file immutabili restano conservati per non distruggere una versione ancora necessaria a un dispositivo offline o a un conflitto. Questa versione non applica una pulizia automatica della cronologia né elimina fisicamente i vecchi oggetti dal bucket; il loro spazio occupato deve essere considerato nel controllo dei consumi.
 
-## Prerequisiti del progetto esistente
+## Backend verificato
 
-Progetto: **`sopralux-64b29`**. Bucket configurato nell'app: **`sopralux-64b29.firebasestorage.app`**.
+Verifiche sul progetto reale del **9 novembre 2026**:
 
-Prima dell'attivazione, verificare nel progetto già predisposto:
+| Componente | Configurazione verificata |
+| --- | --- |
+| Progetto | `sopralux-64b29`, numero `1009612427289` |
+| Fatturazione | Già attiva sul progetto |
+| Firestore | Database `(default)`, modalità Native, edizione Standard, regione `europe-west8` |
+| Storage | Bucket `sopralux-64b29.firebasestorage.app`, posizione `EUROPE-WEST8`, classe restituita dall'API `REGIONAL` |
+| Regole | `firebase/firestore.rules` e `firebase/storage.rules`, validate, pubblicate e rilette identiche ai file del repository |
+| CORS | Applicato e riletto identico a `firebase/cors.json`; origine `https://dierv.github.io`, metodo `GET`, cache 3600 secondi |
 
-- Google Authentication abilitato e `dierv.github.io` tra i domini autorizzati.
-- Database Firestore `(default)` esistente e posizione europea già concordata.
-- Bucket Storage esistente, con la posizione europea già concordata.
-- Regole `firebase/firestore.rules` e `firebase/storage.rules` effettivamente pubblicate.
-- CORS del bucket configurato per `https://dierv.github.io`.
-
-La configurazione dell'app non dimostra che database e bucket siano già attivi. Questi file non creano servizi, non cambiano piano di fatturazione o regione e non trasferiscono l'hosting da GitHub Pages. Non usare regole temporanee che consentono accesso pubblico.
+Il bucket è passato da CORS vuoto e `metageneration: 1` alla configurazione prevista e `metageneration: 2`. Non sono stati creati nuovi servizi o cambiati piano di fatturazione e regioni. L'hosting dell'app resta su GitHub Pages.
 
 ### Pubblicazione delle regole
 
-La normale build della PWA non pubblica le regole. Dopo aver verificato il progetto e con un accesso amministrativo già autorizzato, il comando dalla radice del repository è:
+La normale build della PWA non pubblica le regole. Per aggiornamenti successivi, con un accesso amministrativo autorizzato, il comando dalla radice del repository è:
 
 ```sh
 npx --yes firebase-tools@15.35.0 deploy --only firestore:rules,storage --project sopralux-64b29
@@ -75,15 +78,16 @@ npx --yes firebase-tools@15.35.0 deploy --only firestore:rules,storage --project
 
 ### CORS per scaricare foto e audio
 
-L'SDK `getBlob` richiede CORS sul bucket anche quando l'accesso è autenticato. Il file `firebase/cors.json` autorizza soltanto l'origine attuale della PWA. L'origine non include `/rilievo-elettrico/`.
+L'SDK `getBlob` richiede CORS sul bucket anche quando l'accesso è autenticato. La configurazione di `firebase/cors.json` è stata applicata e verificata: autorizza soltanto l'origine attuale della PWA. L'origine non include `/rilievo-elettrico/`.
 
-Con gli strumenti Google Cloud già autorizzati:
+Per eventuali aggiornamenti, con gli strumenti Google Cloud già autorizzati:
 
 ```sh
-gsutil cors set firebase/cors.json gs://sopralux-64b29.firebasestorage.app
+gcloud storage buckets update gs://sopralux-64b29.firebasestorage.app --cors-file=firebase/cors.json
+gcloud storage buckets describe gs://sopralux-64b29.firebasestorage.app --format="default(cors_config)"
 ```
 
-In alternativa, applicare lo stesso contenuto dalla configurazione CORS del bucket. Quando cambierà il dominio dell'app, aggiornare la lista delle origini e i domini di Authentication. CORS non concede accesso ai dati: restano necessarie autenticazione e regole per UID.
+In alternativa, la JSON API di Cloud Storage accetta un aggiornamento del solo campo `{ "cors": [...] }`; il file per `gcloud` contiene invece direttamente l'array. Quando cambierà il dominio dell'app, aggiornare la lista delle origini e i domini di Authentication. CORS non concede accesso ai dati: restano necessarie autenticazione e regole per UID.
 
 ## Verifiche automatiche
 
@@ -106,7 +110,7 @@ npx --yes firebase-tools@15.35.0 emulators:exec --only firestore,storage --proje
 
 Il progetto fittizio `demo-sopralux-sync` mantiene i test separati dal progetto reale. I test delle regole verificano accesso senza account, accesso incrociato, revisioni non valide, percorsi errati, cancellazioni, immutabilità e limite di dimensione. Se eseguiti senza emulatori, risultano esplicitamente saltati.
 
-Verifiche del 9 novembre 2026: **26 test del motore superati**, **17 test del backend superati** e **8 scenari delle regole superati negli emulatori** (9 test contando la suite contenitore). Le prove hanno verificato anche che le chiavi numeriche degli oggetti producano la stessa JSON canonica nel motore e nel backend. Questi risultati locali non attestano l'attivazione del backend reale.
+Verifiche del 9 novembre 2026: **86 test applicativi superati** fra accesso, motore, backend e integrazione, più **8 scenari delle regole superati negli emulatori** (9 test contando la suite contenitore). Le prove hanno verificato anche che le chiavi numeriche degli oggetti producano la stessa JSON canonica nel motore e nel backend. Le verifiche del backend reale sono riportate separatamente sopra; nessuno di questi risultati equivale alla prova completa su due dispositivi fisici.
 
 L'SDK rimane fissato a Firebase **13.2.0**. Per rigenerare il bundle dopo una modifica agli import:
 
@@ -118,6 +122,8 @@ sh build_pwa.sh ..
 ```
 
 ## Prova finale su due dispositivi
+
+**Da eseguire sulla release pubblicata; non ancora attestata su dispositivi reali.**
 
 1. Accedere con lo stesso account su PC e tablet: verificare stesso elenco e apertura completa di tavole, foto e audio.
 2. Modificare un sopralluogo sul PC; dopo la ricezione sul tablet, proseguire dal tablet: aggiornamento automatico, senza conflitto.
@@ -135,6 +141,8 @@ sh build_pwa.sh ..
 - [Transazioni Firestore, retry e comportamento offline](https://firebase.google.com/docs/firestore/manage-data/transactions).
 - [API JavaScript Firestore](https://firebase.google.com/docs/reference/js/firestore).
 - [Download Storage e CORS](https://firebase.google.com/docs/storage/web/download-files).
+- [Configurare e verificare CORS del bucket](https://docs.cloud.google.com/storage/docs/using-cors).
+- [Struttura della configurazione CORS](https://docs.cloud.google.com/storage/docs/cors-configurations).
 - [API JavaScript Storage](https://firebase.google.com/docs/reference/js/storage).
 - [Condizioni nelle regole Storage](https://firebase.google.com/docs/storage/security/rules-conditions).
 - [Riferimento delle regole Storage e immutabilità](https://firebase.google.com/docs/reference/security/storage).

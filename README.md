@@ -11,8 +11,8 @@ Indirizzo: **https://dierv.github.io/rilievo-elettrico/**
 
 ## Dove stanno i dati
 
-- **Sul dispositivo**, nella memoria dell'app: è la copia di lavoro, utilizzabile anche offline. Nel ramo della sincronizzazione ogni account Google ha un archivio locale separato; l'uso senza accesso mantiene un proprio archivio.
-- **Nell'account Firebase privato**, dopo l'attivazione della sincronizzazione: una copia dei sopralluoghi, delle tavole, delle foto, degli audio e della libreria simboli è condivisa fra i dispositivi dello stesso account.
+- **Sul dispositivo**, nella memoria dell'app: è la copia di lavoro, utilizzabile anche offline. Ogni account Google ha un archivio locale separato; l'uso senza accesso mantiene un proprio archivio.
+- **Nel cloud Firebase privato dell'account Google**: i sopralluoghi, le tavole, le foto, gli audio e la libreria simboli vengono sincronizzati fra i dispositivi che usano lo stesso account.
 - **In una cartella scelta da te** (es. Documenti/Rilievi), se la imposti dalla prima schermata. Per ogni sopralluogo:
   - `rilievo.json` (tutti i dati),
   - `piante/`, `foto/`, `audio/`,
@@ -24,17 +24,17 @@ In questo repository c'è solo l'app: nessun dato dei rilievi.
 
 ## Accesso Google e sincronizzazione
 
-La release attualmente pubblicata include **Accedi con Google**, collegato al progetto Firebase `sopralux-64b29`; il funzionamento dell'accesso è stato confermato. L'app ricorda l'account e permette di uscire con **Esci**.
+Premi **Accedi con Google** e usa lo stesso account su PC e tablet per ritrovare i tuoi sopralluoghi. L'app ricorda l'account e permette di uscire con **Esci**. I dati nel progetto Firebase `sopralux-64b29` sono privati per account.
 
-**Il ramo `feat/firebase-sync` implementa la sincronizzazione ed è in preparazione per l'attivazione.** Prima della pubblicazione vanno verificati Firestore, Storage, regole private e CORS nel progetto reale. Il login Google, da solo, non conferma che questi servizi siano configurati.
+- Le modifiche in sequenza aggiornano automaticamente la revisione condivisa: dopo aver ricevuto l'ultima versione, puoi proseguire da un altro dispositivo.
+- Se due dispositivi modificano indipendentemente lo stesso impianto, l'app chiede quale **intero sopralluogo** mantenere. La scelta riguarda anche foto e audio; vale anche se una copia è stata cancellata.
+- Foto, audio e modifiche offline rimangono sul dispositivo e in coda per il ritorno della rete. Una copia ricevuta dal cloud è disponibile offline dopo il download completo dei suoi allegati.
+- Al primo accesso, i dati locali precedenti vengono copiati nell'archivio dell'account, conservando l'originale. Gli altri account e l'uso senza accesso hanno archivi distinti.
+- La libreria personale dei simboli segue lo stesso account. La chiave Anthropic e i collegamenti alle cartelle rimangono sul dispositivo.
 
-Con la sincronizzazione attiva:
+Firestore e Storage sono predisposti nella regione `europe-west8`; CORS è stato applicato e verificato per `https://dierv.github.io`. Sono superati **86 test applicativi e 8 scenari delle regole negli emulatori**. La prova completa su due dispositivi reali resta da eseguire; l'accesso Google è già stato confermato funzionante dall'utente.
 
-- Le modifiche in sequenza aggiornano automaticamente la revisione condivisa.
-- Se due dispositivi modificano indipendentemente lo stesso impianto, l'utente sceglie quale **intero sopralluogo** mantenere.
-- Foto, audio e modifiche offline rimangono in coda. Il primo accesso migra i dati locali all'account, conservando l'archivio originale.
-
-Configurazione e verifiche: [Accesso Google](docs/FIREBASE_ACCESSO.md) e [Sincronizzazione](docs/FIREBASE_SINCRONIZZAZIONE.md). Il bundle Firebase è incluso nella cache offline; la build Claude mantiene il proprio salvataggio e non carica Firebase.
+Configurazione, limiti e verifiche: [Accesso Google](docs/FIREBASE_ACCESSO.md) e [Sincronizzazione](docs/FIREBASE_SINCRONIZZAZIONE.md). Il bundle Firebase è incluso nella cache offline; la build Claude mantiene il proprio salvataggio e non carica Firebase.
 
 ## iPhone e iPad
 - Su iOS si installa da Safari: **Condividi → «Aggiungi alla schermata Home»**.
