@@ -1,12 +1,14 @@
 # Sopralux – sincronizzazione tra dispositivi
 
-La PWA sincronizza sopralluoghi, allegati e libreria personale dei simboli fra dispositivi che usano lo stesso account Google. Il progetto Firebase reale, Firestore, Storage e CORS sono stati verificati; l'accesso Google è già stato confermato funzionante dall'utente.
+La PWA sincronizza sopralluoghi, allegati e libreria personale dei simboli fra dispositivi che usano lo stesso account Google. Il progetto Firebase reale, Firestore, Storage e CORS sono stati verificati; **l'utente ha confermato che l'accesso Google e la sincronizzazione funzionano sui propri dispositivi**.
 
-Sono superati **86 test applicativi e 8 scenari delle regole negli emulatori**. **La prova completa su due dispositivi reali resta da eseguire**: i casi da verificare sono elencati in fondo a questa guida.
+La release iniziale della sincronizzazione ha superato **86 test applicativi e 8 scenari delle regole negli emulatori**. La conferma sui dispositivi reali riguarda l'uso provato dall'utente: **restano da completare le verifiche sistematiche dei casi offline, dei conflitti e degli allegati**, elencate in fondo a questa guida.
 
 ## Comportamento concordato
 
 Entrando con lo stesso account Google, ogni dispositivo ritrova gli stessi sopralluoghi. Una modifica che prosegue dall'ultima revisione ricevuta diventa automaticamente la nuova revisione condivisa.
+
+Sul sopralluogo aperto, un aggiornamento remoto mantiene la tavola e la selezione ancora disponibili; conserva zoom, spostamento e rotazione se l'inquadratura è valida e le dimensioni della tavola sono rimaste uguali. Se la tavola è stata eliminata, apre la prima disponibile; se l'elemento selezionato non esiste più, lo deseleziona. L'aggiornamento attende la fine della modifica di un campo, di un gesto o del caricamento di una tavola.
 
 Quando due dispositivi modificano indipendentemente lo stesso sopralluogo, l'app conserva le due copie e chiede quale **intero sopralluogo** mantenere. Non decide in base all'orologio del tablet e non fonde automaticamente i singoli simboli. La stessa regola copre il caso «modificato qui, cancellato altrove».
 
@@ -91,6 +93,8 @@ In alternativa, la JSON API di Cloud Storage accetta un aggiornamento del solo c
 
 ## Verifiche automatiche
 
+L'aggiornamento del 9 novembre 2026 che mantiene la vista dell'impianto ha superato **95 test applicativi**: i precedenti 86 più 9 regressioni sull'editor reale, inclusi caricamenti asincroni, selezione e tavole eliminate. Le regole Firebase non sono cambiate rispetto alla release iniziale.
+
 Test di accesso, motore, backend e integrazione con dati sintetici, senza connessione al progetto reale:
 
 ```sh
@@ -110,7 +114,7 @@ npx --yes firebase-tools@15.35.0 emulators:exec --only firestore,storage --proje
 
 Il progetto fittizio `demo-sopralux-sync` mantiene i test separati dal progetto reale. I test delle regole verificano accesso senza account, accesso incrociato, revisioni non valide, percorsi errati, cancellazioni, immutabilità e limite di dimensione. Se eseguiti senza emulatori, risultano esplicitamente saltati.
 
-Verifiche del 9 novembre 2026: **86 test applicativi superati** fra accesso, motore, backend e integrazione, più **8 scenari delle regole superati negli emulatori** (9 test contando la suite contenitore). Le prove hanno verificato anche che le chiavi numeriche degli oggetti producano la stessa JSON canonica nel motore e nel backend. Le verifiche del backend reale sono riportate separatamente sopra; nessuno di questi risultati equivale alla prova completa su due dispositivi fisici.
+Verifiche della release iniziale della sincronizzazione, del 9 novembre 2026: **86 test applicativi superati** fra accesso, motore, backend e integrazione, più **8 scenari delle regole superati negli emulatori** (9 test contando la suite contenitore). Le prove hanno verificato anche che le chiavi numeriche degli oggetti producano la stessa JSON canonica nel motore e nel backend. Le verifiche del backend reale e la successiva conferma dell'utente sui propri dispositivi sono distinte da questi test automatici.
 
 L'SDK rimane fissato a Firebase **13.2.0**. Per rigenerare il bundle dopo una modifica agli import:
 
@@ -121,9 +125,9 @@ cd ..
 sh build_pwa.sh ..
 ```
 
-## Prova finale su due dispositivi
+## Verifiche su due dispositivi
 
-**Da eseguire sulla release pubblicata; non ancora attestata su dispositivi reali.**
+**Sincronizzazione confermata dall'utente sui propri dispositivi.** L'elenco seguente è il piano di verifica completo: la conferma ricevuta non attesta ancora tutti i casi, in particolare offline, conflitti e allegati.
 
 1. Accedere con lo stesso account su PC e tablet: verificare stesso elenco e apertura completa di tavole, foto e audio.
 2. Modificare un sopralluogo sul PC; dopo la ricezione sul tablet, proseguire dal tablet: aggiornamento automatico, senza conflitto.

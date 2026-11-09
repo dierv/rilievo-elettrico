@@ -5,7 +5,7 @@
 const PwaCloud = {
   uid: null, dbName: null, prepared: false, started: false, switching: false,
   remote: null, engine: null, generation: 0, documentEpoch: 0, activities: 0,
-  captureWanted: new Set(), captureTail: Promise.resolve(), statusValue: {},
+  captureWanted: new Set(), captureTail: Promise.resolve(), statusValue: {}, planLoads: new Set(),
   error: '', localError: '', locked: false, applying: false, migrationNotice: '',
   json: value => JSON.parse(JSON.stringify(value)),
   current() { return !this.switching && !!this.uid && FirebaseAccount.user?.uid === this.uid; },
@@ -281,7 +281,7 @@ const PwaCloud = {
   remoteApplyBusy() {
     const modal = $('#modal'), active = document.activeElement;
     const temporary = S.tmp || {};
-    return !!(this.activities || this.failedAssets?.size || Sync.paused || Rec.active || Archive.busy
+    return !!(this.activities || this.planLoads.size || this.failedAssets?.size || Sync.paused || Rec.active || Archive.busy
       || (typeof ptrs !== 'undefined' && ptrs.size) || (typeof gest !== 'undefined' && gest)
       || (typeof pendingPose !== 'undefined' && pendingPose) || (typeof pendingVn !== 'undefined' && pendingVn)
       || ['poly', 'line', 'cal', 'stroke'].some(key => temporary[key]?.length) || temporary.cam || temporary.vn
@@ -376,12 +376,32 @@ const PwaCloud = {
     if (id === '_sopralux_library') { await loadLib(); if (S.sv) { renderPalette(); renderPanel(); redraw(); } }
     else {
       const wasOpen = S.sv?.id === id; const plan = S.planId;
+      const view = { ...S.view }, selection = S.sel ? { ...S.sel } : null;
+      const image = S.planImg[plan] || S.sv?.plans.find(p => p.id === plan);
+      const dimensions = image ? { w: image.w, h: image.h } : null;
       for (const [key, url] of Uploads.localUrls) { URL.revokeObjectURL(url); Uploads.localUrls.delete(key); }
       for (const value of AudURL.values()) URL.revokeObjectURL(value.url);
       AudURL.clear(); await restoreLocalUrls();
       if (wasOpen) {
         if (state.deleted) { S.sv = null; S.planImg = {}; await loadSurveyList(); renderHome(); toast('Impianto eliminato sull’altro dispositivo.'); }
-        else { await this.originalOpenSurvey(id); if (plan && S.sv?.plans.some(p => p.id === plan)) await switchPlan(plan); toast('Impianto aggiornato dalla versione online.'); }
+        else {
+          await this.originalOpenSurvey(id);
+          // showSurvey avvia il caricamento della prima tavola senza attenderlo.
+          // Anche il suo fitView deve finire prima di ripristinare l'inquadratura.
+          await Promise.all([...this.planLoads]);
+          if (S.sv?.id === id && plan && S.sv.plans.some(p => p.id === plan)) {
+            if (S.planId !== plan) await switchPlan(plan);
+            const currentImage = S.planImg[plan] || S.sv.plans.find(p => p.id === plan);
+            const sameDimensions = dimensions && currentImage && dimensions.w === currentImage.w && dimensions.h === currentImage.h;
+            if (sameDimensions && view.s > 0 && ['s', 'tx', 'ty', 'r'].every(key => Number.isFinite(view[key]))) S.view = view;
+            const objects = { room: S.rooms, item: S.items, photo: S.photos, draw: S.draws, vnote: S.vnotes };
+            const exists = selection && (selection.t === 'ext' ? selection.id === plan
+              : objects[selection.t]?.some(object => object.id === selection.id && object.planId === plan));
+            S.sel = exists ? selection : null;
+            renderPanel(); rotBtnUpdate(); rotPanelSync(); redraw();
+          }
+          toast('Impianto aggiornato dalla versione online.');
+        }
       } else { await loadSurveyList(); if (!S.sv) renderHome(); }
     }
     this.refresh();
@@ -674,6 +694,14 @@ Object.assign(PwaCloud, {
     vnAudioBlob = n => this.getFileBlob('audio_' + n.id, n.asset, n.cloudFile);
     const originalRestore = restoreLocalUrls;
     restoreLocalUrls = async () => { await originalRestore(); };
+    const originalSwitchPlan = switchPlan;
+    switchPlan = (...args) => {
+      const loading = originalSwitchPlan(...args);
+      this.planLoads.add(loading);
+      const finished = () => this.planLoads.delete(loading);
+      loading.then(finished, finished);
+      return loading;
+    };
     this.originalOpenSurvey = openSurvey;
     openSurvey = async id => {
       if (this.activities || this.failedAssets?.size) { toast('Attendi il salvataggio dei file prima di cambiare impianto.', true); return; }
