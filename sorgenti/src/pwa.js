@@ -1,6 +1,15 @@
-/* ============ APP INSTALLATA SUL TABLET (PWA): niente Claude, tutto sul dispositivo ============ */
+/* ============ APP INSTALLATA SUL TABLET (PWA): archivio locale e accesso Google ============ */
 // Dati e file restano nel browser del tablet (IndexedDB, archivio persistente) e, se scegli una cartella, anche lì come file.
 // L'AI usa la chiave API Anthropic dell'utente, salvata solo su questo tablet; la spesa si somma per sopralluogo.
+// Configurazione pubblica dell'app Firebase. L'accesso non cambia ancora l'archivio locale.
+const FIREBASE_CONFIG = Object.freeze({
+  apiKey: 'AIzaSyBzw4JrWepad4z7tewA1scNNEZ4gr7sxAs',
+  authDomain: 'sopralux-64b29.firebaseapp.com',
+  projectId: 'sopralux-64b29',
+  storageBucket: 'sopralux-64b29.firebasestorage.app',
+  messagingSenderId: '1009612427289',
+  appId: '1:1009612427289:web:db0b2576422d42e28e5a88',
+});
 const KV = {
   get(k, d = null) { try { const v = localStorage.getItem('ril_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { if (v == null) localStorage.removeItem('ril_' + k); else localStorage.setItem('ril_' + k, JSON.stringify(v)); } catch (e) { } },
@@ -244,7 +253,7 @@ async function recoverFromFolder() {
 let installEvt = null; const hadCtl = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 function pwaHomeBanners() {
-  const b = [];
+  const b = [FirebaseAccount.html()];
   if (!isInstalled()) b.push(`<div class="banner">📲 Per usarla anche offline installala: ${installEvt ? '<button class="sm pri" id="pwInst">Installa app</button>' : isIOS() ? 'in Safari tocca <b>Condividi</b> → <b>«Aggiungi alla schermata Home»</b>' : 'menu ⋮ di Chrome → <b>Installa app</b> (o "Aggiungi a schermata Home")'}.</div>`);
   if (!Archive.ok()) b.push(`<div class="banner warn">📁 ${isIOS() ? 'Su iPhone e iPad il browser non permette di salvare in una cartella' : 'Questo browser non permette di salvare in una cartella'}: i dati restano nell'app, anche offline. Per avere i file: <b>Computo → Backup completo</b> → <b>Condividi</b> → «Salva su File». Per riprenderli: «Importa backup».${isIOS() ? ' <b>Attenzione:</b> se togli l\'icona dalla Home, iOS cancella anche i dati dell\'app: fai prima il backup.' : ''}</div>`);
   else if (!Archive.root) b.push(`<div class="banner warn">📁 Scegli la cartella dove salvare dati, piante, foto e audio: una cartella <b>sul tablet</b> (es. Documenti/Rilievi), non su Drive. <button class="sm pri" id="pwPick">Scegli cartella</button></div>`);
@@ -255,6 +264,7 @@ function pwaHomeBanners() {
   return b;
 }
 function pwaHomeWire() {
+  FirebaseAccount.wire();
   const on = (id, f) => { const e = $('#' + id); if (e) e.onclick = f; };
   on('pwInst', async () => { if (!installEvt) return; installEvt.prompt(); try { await installEvt.userChoice; } catch (e) { } installEvt = null; renderHome(); });
   on('pwPick', async () => { if (await Archive.pick()) renderHome(); });
@@ -302,6 +312,7 @@ async function pwaSettingsSave(b) {
   toast(v ? 'Chiave API salvata su questo tablet' : 'Chiave API rimossa: AI spenta');
 }
 async function pwaBoot() {
+  FirebaseAccount.init();
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { }
   await Archive.init();
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella

@@ -20,6 +20,14 @@ Indirizzo: **https://dierv.github.io/rilievo-elettrico/**
 
 In questo repository c'è solo l'app: nessun dato dei rilievi.
 
+## Accesso Google – primo passo Firebase
+
+Nella home è disponibile **Accedi con Google**, collegato al progetto Firebase `sopralux-64b29`. L'app ricorda l'accesso sul dispositivo e permette di uscire con **Esci**.
+
+**Questo aggiornamento introduce soltanto l'accesso. La sincronizzazione dei sopralluoghi non è ancora attiva.** L'archivio resta quello locale già esistente: entrare, uscire o cambiare account Google non cambia i sopralluoghi visibili su quel browser e non li carica online. L'app continua ad aprirsi anche senza rete; per un nuovo accesso Google serve internet.
+
+Per attivare il provider e autorizzare il dominio, seguire [Configurazione dell'accesso Google](docs/FIREBASE_ACCESSO.md). Il bundle Firebase è incluso in `lib/firebase.js` e nella cache offline della PWA. La build per Claude non lo carica.
+
 ## iPhone e iPad
 - Su iOS si installa da Safari: **Condividi → «Aggiungi alla schermata Home»**.
 - Il browser di iOS non permette di salvare in una cartella: i dati restano nell'app, anche offline.
