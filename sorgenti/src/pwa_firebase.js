@@ -1,7 +1,6 @@
 /* ============ FIREBASE: ACCESSO GOOGLE (solo PWA) ============ */
-// Primo passo: l'identità Google resta separata dall'archivio locale.
-// CAP.uid, CAP.db e CAP.assets restano invariati fino all'introduzione della
-// sincronizzazione con migrazione e isolamento dei dati per account.
+// Identità Google e popup di accesso. pwa_cloud.js collega l'identità a un archivio
+// locale separato e alla sincronizzazione; le capacità Claude restano invariate.
 const FirebaseAccount = {
   sdk: null, app: null, auth: null, provider: null, user: null,
   ready: false, started: false, busy: null, error: '', unsubscribe: null,
