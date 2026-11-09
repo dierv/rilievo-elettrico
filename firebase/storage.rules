@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function surveyId(sid) {
+      return sid.matches('^[A-Za-z0-9_-]{1,128}$');
+    }
+    function safeSize() {
+      return request.resource.size >= 0 && request.resource.size <= 20 * 1024 * 1024;
+    }
+    function digest(value) {
+      return value is string && value.matches('^[a-f0-9]{64}$');
+    }
+
+    match /users/{uid}/surveys/{sid}/files/{hash} {
+      allow read: if owner(uid) && surveyId(sid) && digest(hash);
+      allow create: if owner(uid) && surveyId(sid) && digest(hash)
+        && resource == null
+        && safeSize()
+        && request.resource.contentType is string
+        && request.resource.contentType.size() <= 128
+        && request.resource.metadata.sha256 == hash
+        && request.resource.metadata.schema == '1';
+      // Le nuove foto e registrazioni hanno un hash diverso. Non si sovrascrive
+      // mai un file usato dalla revisione dell'altro dispositivo.
+      allow update, delete: if false;
+    }
+
+    match /users/{uid}/surveys/{sid}/snapshots/{filename} {
+      allow read: if owner(uid) && surveyId(sid) && filename.matches('^[a-f0-9]{64}\\.json$');
+      allow create: if owner(uid) && surveyId(sid)
+        && resource == null
+        && safeSize()
+        && request.resource.contentType == 'application/json'
+        && digest(request.resource.metadata.sha256)
+        && filename == request.resource.metadata.sha256 + '.json'
+        && request.resource.metadata.schema == '1';
+      allow update, delete: if false;
+    }
+  }
+}

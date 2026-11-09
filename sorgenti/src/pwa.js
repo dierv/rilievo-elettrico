@@ -1,7 +1,8 @@
 /* ============ APP INSTALLATA SUL TABLET (PWA): archivio locale e accesso Google ============ */
-// Dati e file restano nel browser del tablet (IndexedDB, archivio persistente) e, se scegli una cartella, anche lì come file.
+// Copia persistente nel browser, archivio facoltativo su cartella e sincronizzazione
+// privata per account gestita da pwa_cloud.js.
 // L'AI usa la chiave API Anthropic dell'utente, salvata solo su questo tablet; la spesa si somma per sopralluogo.
-// Configurazione pubblica dell'app Firebase. L'accesso non cambia ancora l'archivio locale.
+// Configurazione pubblica dell'app Firebase; i dati sono protetti dalle regole per UID.
 const FIREBASE_CONFIG = Object.freeze({
   apiKey: 'AIzaSyBzw4JrWepad4z7tewA1scNNEZ4gr7sxAs',
   authDomain: 'sopralux-64b29.firebaseapp.com',

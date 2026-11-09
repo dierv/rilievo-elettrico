@@ -18,6 +18,6 @@ await build({
   minify: true,
   charset: 'utf8',
   legalComments: 'inline',
-  banner: { js: '/* Sopralux: Firebase 13.2.0, app + auth. Rigenerare con npm ci e npm run build in sorgenti/firebase. */' },
+  banner: { js: '/* Sopralux: Firebase 13.2.0, app + auth + firestore + storage. Rigenerare con npm ci e npm run build in sorgenti/firebase. */' },
   logLevel: 'info'
 });

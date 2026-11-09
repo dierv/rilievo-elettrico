@@ -10,7 +10,9 @@ Indirizzo: **https://dierv.github.io/rilievo-elettrico/**
 3. Da quel momento la apri dall'icona e funziona anche senza rete.
 
 ## Dove stanno i dati
-- **Sul tablet**, nella memoria dell'app (non su server).
+
+- **Sul dispositivo**, nella memoria dell'app: è la copia di lavoro, utilizzabile anche offline. Nel ramo della sincronizzazione ogni account Google ha un archivio locale separato; l'uso senza accesso mantiene un proprio archivio.
+- **Nell'account Firebase privato**, dopo l'attivazione della sincronizzazione: una copia dei sopralluoghi, delle tavole, delle foto, degli audio e della libreria simboli è condivisa fra i dispositivi dello stesso account.
 - **In una cartella scelta da te** (es. Documenti/Rilievi), se la imposti dalla prima schermata. Per ogni sopralluogo:
   - `rilievo.json` (tutti i dati),
   - `piante/`, `foto/`, `audio/`,
@@ -20,13 +22,19 @@ Indirizzo: **https://dierv.github.io/rilievo-elettrico/**
 
 In questo repository c'è solo l'app: nessun dato dei rilievi.
 
-## Accesso Google – primo passo Firebase
+## Accesso Google e sincronizzazione
 
-Nella home è disponibile **Accedi con Google**, collegato al progetto Firebase `sopralux-64b29`. L'app ricorda l'accesso sul dispositivo e permette di uscire con **Esci**.
+La release attualmente pubblicata include **Accedi con Google**, collegato al progetto Firebase `sopralux-64b29`; il funzionamento dell'accesso è stato confermato. L'app ricorda l'account e permette di uscire con **Esci**.
 
-**Questo aggiornamento introduce soltanto l'accesso. La sincronizzazione dei sopralluoghi non è ancora attiva.** L'archivio resta quello locale già esistente: entrare, uscire o cambiare account Google non cambia i sopralluoghi visibili su quel browser e non li carica online. L'app continua ad aprirsi anche senza rete; per un nuovo accesso Google serve internet.
+**Il ramo `feat/firebase-sync` implementa la sincronizzazione ed è in preparazione per l'attivazione.** Prima della pubblicazione vanno verificati Firestore, Storage, regole private e CORS nel progetto reale. Il login Google, da solo, non conferma che questi servizi siano configurati.
 
-Per attivare il provider e autorizzare il dominio, seguire [Configurazione dell'accesso Google](docs/FIREBASE_ACCESSO.md). Il bundle Firebase è incluso in `lib/firebase.js` e nella cache offline della PWA. La build per Claude non lo carica.
+Con la sincronizzazione attiva:
+
+- Le modifiche in sequenza aggiornano automaticamente la revisione condivisa.
+- Se due dispositivi modificano indipendentemente lo stesso impianto, l'utente sceglie quale **intero sopralluogo** mantenere.
+- Foto, audio e modifiche offline rimangono in coda. Il primo accesso migra i dati locali all'account, conservando l'archivio originale.
+
+Configurazione e verifiche: [Accesso Google](docs/FIREBASE_ACCESSO.md) e [Sincronizzazione](docs/FIREBASE_SINCRONIZZAZIONE.md). Il bundle Firebase è incluso nella cache offline; la build Claude mantiene il proprio salvataggio e non carica Firebase.
 
 ## iPhone e iPad
 - Su iOS si installa da Safari: **Condividi → «Aggiungi alla schermata Home»**.

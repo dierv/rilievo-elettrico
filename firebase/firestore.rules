@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function identifier(value) {
+      return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$') && !value.matches('^__.*__$');
+    }
+    function digest(value) {
+      return value is string && value.matches('^[a-f0-9]{64}$');
+    }
+    function validHead(uid, sid) {
+      let data = request.resource.data;
+      return identifier(sid)
+        && data.keys().hasAll(['schema', 'rev', 'hash', 'snapshotHash', 'snapshotPath', 'name', 'del', 'dev', 'kind', 'upd'])
+        && data.keys().hasOnly(['schema', 'rev', 'hash', 'snapshotHash', 'snapshotPath', 'name', 'del', 'dev', 'kind', 'upd'])
+        && data.schema == 1
+        && data.rev is int && data.rev > 0
+        && data.name is string && data.name.size() <= 200
+        && data.del is bool
+        && identifier(data.dev)
+        && data.kind == (sid == '_sopralux_library' ? 'library' : 'survey')
+        && data.upd == request.time
+        && (
+          (data.del == true && data.hash == '' && data.snapshotHash == '' && data.snapshotPath == '')
+          || (data.del == false && digest(data.hash) && digest(data.snapshotHash)
+            && data.snapshotPath == 'users/' + uid + '/surveys/' + sid + '/snapshots/' + data.snapshotHash + '.json')
+        );
+    }
+
+    match /users/{uid}/surveys/{sid} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == 1;
+      allow update: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == resource.data.rev + 1;
+      // La cancellazione è una revisione del:true: i dispositivi offline devono
+      // riceverla e le modifiche indipendenti devono ancora poter essere scelte.
+      allow delete: if false;
+    }
+    // Tutti gli altri percorsi, inclusi quelli di altri account, restano negati.
+  }
+}
