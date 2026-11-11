@@ -277,7 +277,14 @@ async function boot() {
   $('#fJson').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); };
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') { if (Rec.active) return; closeModal(); if (pendingPose) { pendingPose = null; S.tmp = {}; redraw(); } if (pendingVn) { const rep = pendingVn.replace; pendingVn = null; if (!rep) setTool('sel'); } } });
   document.addEventListener('visibilitychange', () => { if (document.hidden && Sync.pending()) Sync.flush(); });
-  window.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !$('#sv').classList.contains('hide')) { e.preventDefault(); doUndo(); } if (e.key === 'Escape') { closeModal(); closeViewer(); } });
+  window.addEventListener('keydown', e => {
+    const onPlan = !$('#sv').classList.contains('hide') && !(e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) && $('#modal').classList.contains('hide');
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !$('#sv').classList.contains('hide')) { e.preventDefault(); doUndo(); }
+    if (onPlan && (e.ctrlKey || e.metaKey) && e.key === 'c' && selRoomIds().length) { e.preventDefault(); copyRooms(); } // come in CAD: Ctrl+C / Ctrl+V sulle stanze
+    if (onPlan && (e.ctrlKey || e.metaKey) && e.key === 'v' && S.clip && curPlan()) { e.preventDefault(); startPaste(); }
+    if (onPlan && e.key === 'Enter' && S.tmp && S.tmp.paste) { e.preventDefault(); confirmPaste(); }
+    if (e.key === 'Escape') { if (onPlan && S.tmp && S.tmp.paste) { S.tmp = {}; updateHint(); renderPanel(); redraw(); } closeModal(); closeViewer(); }
+  });
   $('#hList').innerHTML = '<div class="mut">Avvio…</div>';
   await IDB.open();
   if (PLATFORM === 'pwa') await pwaBoot();

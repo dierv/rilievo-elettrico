@@ -37,6 +37,24 @@ function renderPanel() {
       <button style="width:100%;margin-top:8px" data-act="manCancel">Annulla</button>`;
     return;
   }
+  if (S.tool === 'box') { // riquadro: scelta di più stanze, copia e incolla
+    const pa = S.tmp.paste, n = S.clip ? S.clip.rooms.length : 0;
+    if (pa) {
+      el.innerHTML = `<h2>Incolla ${pa.rooms.length} ${pa.rooms.length === 1 ? 'stanza' : 'stanze'}</h2>
+        <div class="mut small" style="margin:4px 0 8px">${pa.dxf ? 'Tavole DXF: le stanze sono nella stessa posizione del disegno di origine. ' : 'Misure vere, come nella tavola di origine. '}Trascinale dove vanno (partendo da una di loro); con due dita sposti la pianta e lo zoom.</div>
+        <div class="row" style="margin-top:12px"><button data-act="pasteCancel">Annulla</button><button class="pri" data-act="pasteOk">Conferma</button></div>`;
+      return;
+    }
+    const ids = selRoomIds(); const rs = ids.map(roomById).filter(Boolean);
+    el.innerHTML = `<h2>Riquadro</h2>
+      <ol class="small" style="padding-left:18px;margin:4px 0 10px;line-height:1.5"><li>Trascina un riquadro: <b>verso destra</b> prende le stanze tutte dentro (blu), <b>verso sinistra</b> anche quelle solo toccate (verde). Ogni riquadro si aggiunge.</li>
+      <li>Tocca una stanza per aggiungerla o toglierla.</li><li><b>Copia</b>, apri l'altra tavola (in alto) e premi <b>Incolla</b>.</li></ol>
+      <div class="mut">Stanze scelte: <b>${rs.length}</b>${rs.length ? ' – ' + rs.map(r => esc(r.name)).join(', ') : ''}</div>
+      <div class="row" style="margin-top:12px"><button data-act="boxClear" ${rs.length ? '' : 'disabled'}>Deseleziona</button><button class="pri" data-act="boxCopy" ${rs.length ? '' : 'disabled'}>Copia</button></div>
+      ${n ? `<div class="row" style="margin-top:8px"><button class="pri" data-act="pasteRooms">📋 Incolla ${n} ${n === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}
+      <div class="row" style="margin-top:8px"><button data-act="tool" data-v="sel">Fine</button></div>`;
+    return;
+  }
   if (S.tool === 'meas') {
     const T = S.tmp; const pts = T.meas || []; const k = ppm(P); const inf = measInfo(T, k);
     el.innerHTML = `<h2>Misura</h2>
@@ -73,10 +91,11 @@ function renderPanel() {
       <li><b>Destino</b>: tocca un elemento e scegli <span style="color:#dc2626">da rimuovere</span>, <span style="color:#ea580c">da sostituire</span> o <span style="color:#16a34a">nuovo</span>: compare sulla pianta, nel CSV e su layer DXF separati.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li>
       <li><b>Tavola da foto</b>: + Tavola → Fotografa il disegno; trascina i 4 cerchi sugli angoli del foglio, scegli formato (A3, A4…) e scala del disegno: la tavola nasce dritta, pulita e in scala.</li>
+      <li><b>Riquadro</b>: trascina un riquadro sulle stanze (verso destra quelle tutte dentro, verso sinistra anche quelle toccate), <b>Copia</b>, apri l'altra tavola e <b>Incolla</b>: le trascini dove vanno e confermi. Tra due tavole DXF finiscono già nella stessa posizione del disegno.</li>
       <li><b>Misura</b>: tocca due o più punti (vanno esattamente dove tocchi, senza agganci): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Colori del DXF</b> (interruttore «colori» sopra la rotazione, solo per le tavole DXF): mostra la pianta con i colori di AutoCAD o tutta in nero. Per una tavola importata prima, il primo tocco chiede lo stesso file DXF e aggiunge i colori senza spostare niente.</li>
       <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li></ol></div>
-    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div></div>
+    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div>${S.clip ? `<div class="row" style="margin-top:8px"><button class="sm pri" data-act="pasteRooms">📋 Incolla ${S.clip.rooms.length} ${S.clip.rooms.length === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}</div>
     <div class="sec"><b>Visualizza</b>
       <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
@@ -217,6 +236,11 @@ function initPanel() {
       case 'measClose': if ((S.tmp.meas || []).length >= 3) S.tmp.closed = true; renderPanel(); redraw(); break;
       case 'measClear': S.tmp.meas = []; S.tmp.closed = false; renderPanel(); redraw(); break;
       case 'manDone': finishRoom(); break;
+      case 'boxCopy': copyRooms(); break;
+      case 'boxClear': setRoomSel([]); break;
+      case 'pasteRooms': startPaste(); break;
+      case 'pasteOk': confirmPaste(); break;
+      case 'pasteCancel': S.tmp = {}; updateHint(); renderPanel(); redraw(); break;
       case 'manCancel': setTool('sel'); break;
       case 'fate': if (it) { pushUndo(); if (v) it.fate = v; else delete it.fate; Sync.markItem(it); renderPanel(); redraw(); } break;
       case 'genCheck': openGeneralCheck(); break;

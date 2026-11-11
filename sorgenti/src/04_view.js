@@ -113,13 +113,25 @@ function draw() {
   // stanze
   const ed = editingRoom();
   for (const r of roomsOfPlan(P.id)) {
-    const sel = S.sel && S.sel.t === 'room' && S.sel.id === r.id; const st = roomState(r); const [fillC, strokeC, textC] = ROOM_COL[st];
+    const sel = (S.sel && S.sel.t === 'room' && S.sel.id === r.id) || (S.sel && S.sel.t === 'rooms' && S.sel.ids.includes(r.id)); const st = roomState(r); const [fillC, strokeC, textC] = ROOM_COL[st];
     x.beginPath(); r.poly.forEach((p, i) => { const [sx, sy] = toS(p[0], p[1]); i ? x.lineTo(sx, sy) : x.moveTo(sx, sy); }); x.closePath();
     x.fillStyle = sel && st === 'ok' ? 'rgba(29,78,216,.10)' : fillC; x.fill();
     x.lineWidth = sel ? 3 : 2; x.strokeStyle = sel ? '#1d4ed8' : strokeC; x.stroke();
     const [cx, cy] = toS(...polyCentroid(r.poly));
     x.font = '600 13px sans-serif'; x.textAlign = 'center'; x.lineWidth = 3.5; x.strokeStyle = 'rgba(255,255,255,.9)';
     const lbl = (st === 'done' ? '✓ ' : st === 'warn' ? '! ' : '') + r.name; x.strokeText(lbl, cx, cy); x.fillStyle = textC; x.fillText(lbl, cx, cy);
+  }
+  if (S.tmp && S.tmp.box) { // riquadro di selezione: verso destra «finestra» (blu, tutto dentro), verso sinistra «interseca» (verde tratteggiato)
+    const b = S.tmp.box, cross = b.x1 < b.x0; x.beginPath(); x.rect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
+    x.fillStyle = cross ? 'rgba(22,163,74,.10)' : 'rgba(37,99,235,.10)'; x.fill(); x.setLineDash(cross ? [6, 4] : []); x.lineWidth = 1.5; x.strokeStyle = cross ? '#16a34a' : '#2563eb'; x.stroke(); x.setLineDash([]);
+  }
+  if (S.tmp && S.tmp.paste) { // stanze copiate in attesa di conferma
+    const pa = S.tmp.paste;
+    for (const r of pastePolys(pa)) {
+      x.beginPath(); r.poly.forEach((p, i) => { const [sx, sy] = toS(p[0], p[1]); i ? x.lineTo(sx, sy) : x.moveTo(sx, sy); }); x.closePath();
+      x.fillStyle = 'rgba(234,88,12,.12)'; x.fill(); x.setLineDash([7, 4]); x.lineWidth = 2.5; x.strokeStyle = '#ea580c'; x.stroke(); x.setLineDash([]);
+      const [cx, cy] = toS(...polyCentroid(r.poly)); x.font = '600 13px sans-serif'; x.textAlign = 'center'; x.lineWidth = 3.5; x.strokeStyle = 'rgba(255,255,255,.9)'; x.strokeText(r.name, cx, cy); x.fillStyle = '#c2410c'; x.fillText(r.name, cx, cy);
+    }
   }
   if (ed) { // maniglie per modificare il contorno
     ed.poly.forEach((p, i) => {
@@ -314,6 +326,7 @@ function penHover(sx, sy) { // penna sospesa sopra lo schermo: mirino dove cadr�
 }
 function penHoverEnd() { if (PEN.hoverRq) { cancelAnimationFrame(PEN.hoverRq); PEN.hoverRq = 0; } if (S.hover && S.hover.pen) { S.hover = null; redraw(); } }
 function fingerGesture(x0, y0) { // penna in uso: il dito sposta la pianta; nella selezione un tocco seleziona ma non trascina oggetti
+  if (S.tool === 'box' && !S.tmp.paste) return panGesture(x0, y0, () => boxTap(x0, y0));
   if (S.tool !== 'sel') return panGesture(x0, y0);
   const h = hitTest(x0, y0);
   return panGesture(x0, y0, () => { if (h && ['item', 'photo', 'vnote', 'draw', 'room'].includes(h.t)) select(h.t, h.o.id); else if (!h) select(null); });
@@ -366,6 +379,7 @@ function centerOn(bx, by) { const c = $('#cv'); const v = S.view, r = v.r || 0; 
 
 /* ============ STRUMENTI ============ */
 const ICONS = {
+  box: '<rect x="3.5" y="5.5" width="17" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.2"/><path d="M9 9.5h6M9 12h6M9 14.5h4" stroke="currentColor" stroke-width="1.6"/>',
   sel: '<path d="M5 3l14 8-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
   room: '<path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="4" cy="5" r="2.2" fill="currentColor"/><circle cx="20" cy="5" r="2.2" fill="currentColor"/><circle cx="20" cy="19" r="2.2" fill="currentColor"/><circle cx="4" cy="19" r="2.2" fill="currentColor"/>',
   photo: '<path d="M4 8h3l2-3h6l2 3h3v11H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/>',
@@ -375,7 +389,7 @@ const ICONS = {
   pen: '<path d="M4 20l1-4L16 5l3 3L8 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 7l3 3" stroke="currentColor" stroke-width="2"/>',
   vnote: '<rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 };
-const TOOLS = [['sel', 'Seleziona'], ['room', 'Stanza'], ['photo', 'Foto'], ['sym', 'Simbolo'], ['pen', 'Penna'], ['vnote', 'Nota audio'], ['meas', 'Misura'], ['cal', 'Scala']];
+const TOOLS = [['sel', 'Seleziona'], ['box', 'Riquadro'], ['room', 'Stanza'], ['photo', 'Foto'], ['sym', 'Simbolo'], ['pen', 'Penna'], ['vnote', 'Nota audio'], ['meas', 'Misura'], ['cal', 'Scala']];
 const HINTS = {
   sel: 'Tocca un simbolo, una foto o una stanza • trascina per spostare • due dita per spostare la pianta e zoomare',
   room: 'Tocca gli angoli della stanza uno alla volta (tieni il dito per la lente) • tocca il primo punto per chiudere',
@@ -386,8 +400,12 @@ const HINTS = {
   cal: 'Tocca due punti di cui conosci la distanza (es. le estremità di una quota)',
   meas: 'Misura: tocca due o più punti, la distanza compare su ogni tratto • chiudi sul primo punto per l\'area',
   vnote: 'Tocca il punto della nota (tieni il dito per la lente), poi registra',
+  box: 'Trascina un riquadro: verso destra prende le stanze tutte dentro, verso sinistra anche quelle toccate • tocca una stanza per aggiungerla o toglierla',
+  paste: 'Trascina le stanze copiate dove vanno • due dita per spostare la pianta e zoomare • poi «Conferma»',
 };
 const PEN_HINTS = { // quando si usa la penna
+  box: 'Penna: trascina un riquadro (verso destra: stanze tutte dentro; verso sinistra: anche quelle toccate) • il dito sposta la pianta',
+  paste: 'Penna: trascina le stanze copiate dove vanno • il dito sposta la pianta • poi «Conferma»',
   sel: 'Penna: tocca e trascina simboli, foto e stanze • dito: sposta la pianta (un tocco seleziona) • due dita per lo zoom',
   pen: 'Disegna con la penna: più premi, più il tratto è spesso • il dito sposta la pianta • "Fine" per tornare alla freccia',
 };
@@ -397,6 +415,7 @@ function renderTools() {
 }
 function setTool(t) {
   if (t !== 'room') S.redrawRoom = null;
+  if (t !== 'box' && S.sel && S.sel.t === 'rooms') S.sel = null; // la scelta multipla vive solo nel Riquadro
   S.tool = t; S.tmp = {}; S.hover = null; S.loupe = null;
   if (t === 'room') S.tmp.poly = [];
   if (t === 'sym' && !S.symSel) S.symSel = S.lib.symbols[0].code;
@@ -404,7 +423,7 @@ function setTool(t) {
   renderTools(); renderPalette(); updateHint(); renderPanel(); redraw();
 }
 function updateHint() {
-  let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine';
+  let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine'; if (k === 'box' && S.tmp.paste) k = 'paste';
   const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || '';
   if (S.tool === 'photo' && Compass.on) h.textContent = 'Bussola attiva: tocca dove ti trovi e il cono parte verso dove guardi (davanti a te = su sullo schermo) • trascina se vuoi dare tu la direzione';
   if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • ritocca "Timbro" per finire';
@@ -416,6 +435,82 @@ function updateHint() {
 function snapRoomPoint(bx, by, o = {}) { // stanze a mano libera (richiesta dell'utente): nessun aggancio né raddrizzamento, il punto va dove tocchi. Solo il primo punto chiude la stanza
   if (o.first && Math.hypot(bx - o.first[0], by - o.first[1]) * S.view.s < 24) return { x: o.first[0], y: o.first[1], mag: 'close', closing: true, guides: [] };
   return { x: bx, y: by, mag: null, closing: false, guides: [] };
+}
+
+/* ============ RIQUADRO: SCELTA DI PIÙ STANZE, COPIA E INCOLLA ============ */
+const selRoomIds = () => (S.sel && S.sel.t === 'rooms' ? S.sel.ids : []);
+function setRoomSel(ids) { S.sel = ids.length ? { t: 'rooms', id: null, ids } : null; renderPanel(); redraw(); }
+function segX(a, b, c, d) { // i segmenti ab e cd si toccano
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}
+function roomsInBox(b) { // b in coordinate dello schermo (la pianta può essere ruotata)
+  const P = curPlan(); const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1); const cross = b.x1 < b.x0;
+  const inR = p => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1; const R = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  return roomsOfPlan(P.id).filter(r => {
+    const sp = r.poly.map(p => toS(p[0], p[1]));
+    if (!cross) return sp.every(inR); // finestra: stanza tutta dentro
+    if (sp.some(inR) || R.some(c => pointInPoly(c[0], c[1], sp))) return true; // interseca: basta toccarla
+    for (let i = 0; i < sp.length; i++) for (let j = 0; j < 4; j++) if (segX(sp[i], sp[(i + 1) % sp.length], R[j], R[(j + 1) % 4])) return true;
+    return false;
+  }).map(r => r.id);
+}
+function boxTap(sx, sy) { // tocco senza trascinare: aggiunge o toglie la stanza toccata
+  const P = curPlan(); const [bx, by] = toB(sx, sy); const r = roomsOfPlan(P.id).filter(q => pointInPoly(bx, by, q.poly)).sort((a, b) => polyArea(a.poly) - polyArea(b.poly))[0];
+  if (!r) return; const ids = selRoomIds(); setRoomSel(ids.includes(r.id) ? ids.filter(i => i !== r.id) : ids.concat(r.id));
+}
+function boxGesture(x0, y0) {
+  let moved = false;
+  return {
+    move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; moved = true; S.tmp.box = { x0, y0, x1: x, y1: y }; redraw(); },
+    up(x, y, cancel) {
+      const b = S.tmp.box; S.tmp.box = null;
+      if (cancel) { redraw(); return; }
+      if (!moved) { boxTap(x0, y0); return; }
+      const add = roomsInBox(b); const ids = selRoomIds(); setRoomSel(ids.concat(add.filter(i => !ids.includes(i)))); // ogni riquadro aggiunge
+    },
+    cancel() { S.tmp.box = null; redraw(); },
+  };
+}
+function copyRooms() {
+  const P = curPlan(); const rs = selRoomIds().map(roomById).filter(Boolean); if (!rs.length) return;
+  S.clip = { planId: P.id, ppm: ppm(P), dxf: P.dxf ? { ...P.dxf } : null, rooms: rs.map(r => ({ name: r.name, kind: r.kind || '', h: r.h, poly: r.poly.map(p => [p[0], p[1]]) })) };
+  toast(`${rs.length} ${rs.length === 1 ? 'stanza copiata' : 'stanze copiate'}: apri l'altra tavola e premi «Incolla»`, false, 5000); renderPanel();
+}
+function pasteMap(c, B) { // dalla tavola di origine a quella di arrivo, a misure vere; tra due DXF nella stessa posizione del disegno
+  const A = c.dxf, D = B.dxf;
+  if (A && D) return p => { const X = ((p[0] / A.s + A.minX) * A.u) / D.u, Y = ((A.maxY - p[1] / A.s) * A.u) / D.u; return [(X - D.minX) * D.s, (D.maxY - Y) * D.s]; };
+  const k = ppm(B) / c.ppm; return p => [p[0] * k, p[1] * k];
+}
+function pastePolys(pa) { return pa.rooms.map(r => ({ ...r, poly: r.poly.map(p => [p[0] + pa.dx, p[1] + pa.dy]) })); }
+function startPaste() {
+  const B = curPlan(); const c = S.clip; if (!B || !c) return;
+  if (S.tool !== 'box') setTool('box');
+  const f = pasteMap(c, B); const rooms = c.rooms.map(r => ({ ...r, poly: r.poly.map(f) }));
+  const all = rooms.flatMap(r => r.poly); const bx0 = Math.min(...all.map(p => p[0])), bx1 = Math.max(...all.map(p => p[0])), by0 = Math.min(...all.map(p => p[1])), by1 = Math.max(...all.map(p => p[1]));
+  const same = !!(c.dxf && B.dxf), inside = bx1 > 0 && by1 > 0 && bx0 < B.w && by0 < B.h;
+  let dx = 0, dy = 0;
+  if (!(same && inside) && (!inside || c.planId === B.id)) { // fuori dalla tavola (o sulla stessa tavola): al centro della vista
+    const cv = $('#cv'); const [mx, my] = toB(cv.clientWidth / 2, cv.clientHeight / 2); dx = mx - (bx0 + bx1) / 2; dy = my - (by0 + by1) / 2;
+  }
+  S.tmp = { paste: { rooms, dx, dy, dxf: same } }; S.sel = null;
+  if (!dx && !dy) centerOn((bx0 + bx1) / 2, (by0 + by1) / 2); // stessa posizione: la vista va sulle stanze
+  updateHint(); renderPanel(); redraw();
+}
+function pasteGesture(x0, y0) { // si trascinano le stanze copiate partendo da una di loro (o dal loro ingombro); altrove si sposta la pianta
+  const pa = S.tmp.paste; const [bx0, by0] = toB(x0, y0); const polys = pastePolys(pa);
+  const all = polys.flatMap(r => r.poly); const pad = 20 / S.view.s;
+  const hit = polys.some(r => pointInPoly(bx0, by0, r.poly)) || (bx0 >= Math.min(...all.map(p => p[0])) - pad && bx0 <= Math.max(...all.map(p => p[0])) + pad && by0 >= Math.min(...all.map(p => p[1])) - pad && by0 <= Math.max(...all.map(p => p[1])) + pad);
+  if (!hit) return panGesture(x0, y0);
+  const dx0 = pa.dx, dy0 = pa.dy;
+  return { move(x, y) { const [bx, by] = toB(x, y); pa.dx = dx0 + bx - bx0; pa.dy = dy0 + by - by0; redraw(); }, up() { redraw(); } };
+}
+function confirmPaste() {
+  const B = curPlan(); const pa = S.tmp.paste; if (!B || !pa) return; pushUndo();
+  const made = pastePolys(pa).map(r => ({ id: uid('r'), planId: B.id, name: r.name, kind: r.kind, h: r.h, done: false, note: '', poly: r.poly.map(p => [r2(p[0]), r2(p[1])]) }));
+  S.rooms.push(...made); S.tmp = {}; roomGeometryChanged(B.id); Sync.mark('plan:' + B.id);
+  setRoomSel(made.map(r => r.id)); updateHint();
+  toast(`${made.length} ${made.length === 1 ? 'stanza incollata' : 'stanze incollate'}`);
 }
 
 /* ============ INTERAZIONE ============ */
@@ -578,6 +673,7 @@ function startGesture(x0, y0) {
     }
     return panGesture(x0, y0, () => { if (h && h.t === 'room') select('room', h.o.id); else select(null); });
   }
+  if (tool === 'box') return S.tmp.paste ? pasteGesture(x0, y0) : boxGesture(x0, y0);
   if (tool === 'room') {
     const poly = S.tmp.poly || (S.tmp.poly = []);
     return pointGesture(x0, y0, toolSnap(), p => {
