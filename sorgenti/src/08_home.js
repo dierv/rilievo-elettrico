@@ -281,6 +281,7 @@ async function boot() {
     const onPlan = !$('#sv').classList.contains('hide') && !(e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) && $('#modal').classList.contains('hide');
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !$('#sv').classList.contains('hide')) { e.preventDefault(); doUndo(); }
     if (onPlan && (e.ctrlKey || e.metaKey) && e.key === 'c' && selRoomIds().length) { e.preventDefault(); copyRooms(); } // come in CAD: Ctrl+C / Ctrl+V sulle stanze
+    if (onPlan && e.key === 'Delete' && S.tool === 'box' && selRoomIds().length) { e.preventDefault(); deleteSelRooms(); } // Canc sulle stanze scelte
     if (onPlan && (e.ctrlKey || e.metaKey) && e.key === 'v' && S.clip && curPlan()) { e.preventDefault(); startPaste(); }
     if (onPlan && e.key === 'Enter' && S.tmp && S.tmp.paste) { e.preventDefault(); confirmPaste(); }
     if (e.key === 'Escape') { if (onPlan && S.tmp && S.tmp.paste) { S.tmp = {}; updateHint(); renderPanel(); redraw(); } closeModal(); closeViewer(); }

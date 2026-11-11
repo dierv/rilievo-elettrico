@@ -488,6 +488,14 @@ function boxGesture(x0, y0) {
     cancel() { S.tmp.box = null; redraw(); },
   };
 }
+async function deleteSelRooms() { // elimina le stanze scelte col Riquadro (foto ed elementi restano sulla pianta)
+  const rs = selRoomIds().map(roomById).filter(Boolean); if (!rs.length) return;
+  const msg = rs.length === 1 ? `Eliminare il locale "${rs[0].name}"? Foto ed elementi restano sulla pianta.` : `Eliminare ${rs.length} locali (${rs.map(r => r.name).join(', ')})? Foto ed elementi restano sulla pianta.`;
+  if (!await askConfirm(msg, 'Elimina', true)) return;
+  pushUndo(); const ids = new Set(rs.map(r => r.id)); const pids = [...new Set(rs.map(r => r.planId))];
+  S.rooms = S.rooms.filter(r => !ids.has(r.id)); pids.forEach(pid => { roomGeometryChanged(pid); Sync.mark('plan:' + pid); });
+  setRoomSel([]); toast(rs.length === 1 ? 'Locale eliminato' : `${rs.length} locali eliminati`);
+}
 function copyRooms() {
   const P = curPlan(); const rs = selRoomIds().map(roomById).filter(Boolean); if (!rs.length) return;
   S.clip = { planId: P.id, ppm: ppm(P), dxf: P.dxf ? { ...P.dxf } : null, rooms: rs.map(r => ({ name: r.name, kind: r.kind || '', h: r.h, poly: r.poly.map(p => [p[0], p[1]]) })) };

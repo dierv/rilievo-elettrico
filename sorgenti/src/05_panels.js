@@ -48,9 +48,10 @@ function renderPanel() {
     const ids = selRoomIds(); const rs = ids.map(roomById).filter(Boolean);
     el.innerHTML = `<h2>Riquadro</h2>
       <ol class="small" style="padding-left:18px;margin:4px 0 10px;line-height:1.5"><li>Trascina un riquadro: <b>verso destra</b> prende le stanze tutte dentro (blu), <b>verso sinistra</b> anche quelle solo toccate (verde). Ogni riquadro si aggiunge.</li>
-      <li>Tocca una stanza per aggiungerla o toglierla.</li><li><b>Sposta</b>: trascina dentro una stanza scelta e si muovono tutte quelle scelte.</li><li><b>Copia</b>, apri l'altra tavola (in alto) e premi <b>Incolla</b>.</li></ol>
+      <li>Tocca una stanza per aggiungerla o toglierla.</li><li><b>Sposta</b>: trascina dentro una stanza scelta e si muovono tutte quelle scelte.</li><li><b>Elimina</b> toglie le stanze scelte (foto ed elementi restano sulla pianta; «Annulla» le rimette).</li><li><b>Copia</b>, apri l'altra tavola (in alto) e premi <b>Incolla</b>.</li></ol>
       <div class="mut">Stanze scelte: <b>${rs.length}</b>${rs.length ? ' – ' + rs.map(r => esc(r.name)).join(', ') : ''}</div>
       <div class="row" style="margin-top:12px"><button data-act="boxClear" ${rs.length ? '' : 'disabled'}>Deseleziona</button><button class="pri" data-act="boxCopy" ${rs.length ? '' : 'disabled'}>Copia</button></div>
+      <div class="row" style="margin-top:8px"><button class="danger" data-act="boxDel" ${rs.length ? '' : 'disabled'}>Elimina${rs.length ? ' (' + rs.length + ')' : ''}</button></div>
       ${n ? `<div class="row" style="margin-top:8px"><button class="pri" data-act="pasteRooms">📋 Incolla ${n} ${n === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}
       <div class="row" style="margin-top:8px"><button data-act="tool" data-v="sel">Fine</button></div>`;
     return;
@@ -238,6 +239,7 @@ function initPanel() {
       case 'manDone': finishRoom(); break;
       case 'boxCopy': copyRooms(); break;
       case 'boxClear': setRoomSel([]); break;
+      case 'boxDel': await deleteSelRooms(); break;
       case 'pasteRooms': startPaste(); break;
       case 'pasteOk': confirmPaste(); break;
       case 'pasteCancel': S.tmp = {}; updateHint(); renderPanel(); redraw(); break;
