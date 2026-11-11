@@ -151,6 +151,44 @@ function toMono(c) { // tavola DXF «tutto nero»: ogni tratto colorato diventa 
   for (let i = 0; i < a.length; i += 4) { const v = Math.min(a[i], a[i + 1], a[i + 2]); a[i] = a[i + 1] = a[i + 2] = v; }
   x.putImageData(d, 0, 0); return c;
 }
+function dxfBounds(prims) { // estensione del disegno (senza i punti isolati lontani) + 3% di margine
+  const xs = [], ys = []; const step = Math.max(1, Math.floor(prims.length / 4000));
+  for (let i = 0; i < prims.length; i += step) { const q = prims[i]; const pts = q.t === 'l' ? q.p : [q.p]; for (const p of pts) { if (isFinite(p[0]) && isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); } } }
+  let minX = pct(xs, 0.003), maxX = pct(xs, 0.997), minY = pct(ys, 0.003), maxY = pct(ys, 0.997);
+  const pw = (maxX - minX) * 0.03 || 1, ph = (maxY - minY) * 0.03 || 1; minX -= pw; maxX += pw; minY -= ph; maxY += ph;
+  return { minX, maxX, minY, maxY };
+}
+function renderDxf(prims, minX, maxY, s, w, h) { // tavola a colori; «tutto nero» si ricava al volo (toMono)
+  const c = newCanvas(w, h); const x = c.getContext('2d'); x.lineWidth = 1.5; x.lineJoin = 'round';
+  const X = p => (p[0] - minX) * s, Y = p => (maxY - p[1]) * s;
+  const byCol = new Map(); for (const q of prims) if (q.t === 'l') { const k = dxfInk(q.k); if (!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(q); }
+  for (const [k, arr] of byCol) {
+    x.beginPath(); for (const q of arr) { x.moveTo(X(q.p[0]), Y(q.p[0])); for (let i = 1; i < q.p.length; i++) x.lineTo(X(q.p[i]), Y(q.p[i])); }
+    x.strokeStyle = k; x.stroke();
+  }
+  for (const q of prims) if (q.t === 't') { const fs = q.h * s; if (fs < 5 || fs > 400) continue; x.save(); x.translate(X(q.p), Y(q.p)); x.rotate(-q.r); x.font = fs + 'px sans-serif'; x.fillStyle = dxfInk(q.k); x.fillText(q.s, 0, 0); x.restore(); }
+  return c;
+}
+function pickFile(accept) { // finestra di scelta del file (dal tocco su un pulsante)
+  return new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.style.display = 'none'; document.body.appendChild(i); i.onchange = () => { res(i.files && i.files[0] || null); i.remove(); }; i.click(); });
+}
+async function addDxfColors(P) { // tavola DXF importata prima dei colori: si rilegge lo stesso DXF, stessa scala e stessa posizione
+  const a = await askChoice('Colori del DXF', [['pick', 'Scegli il file DXF'], ['no', 'Annulla']], 'Questa tavola è stata importata prima che l\'app salvasse i colori. Scegli lo stesso file DXF: la pianta prende i colori e locali, simboli e foto restano dove sono.');
+  if (a !== 'pick') return;
+  const file = await pickFile('.dxf'); if (!file) return;
+  toast('Lettura del DXF…', false, 8000); await needLib('dxf');
+  let dx; try { dx = new window.DxfParser().parseSync(await file.text()); } catch (e) { toast('DXF non leggibile: ' + (e.message || e), true, 6000); return; }
+  const prims = dxfCollect(dx); if (!prims.length) { toast('Il DXF non contiene geometrie nello spazio modello', true); return; }
+  const d = P.dxf, b = dxfBounds(prims), tx = (b.maxX - b.minX) * 0.02, ty = (b.maxY - b.minY) * 0.02;
+  if (Math.abs(b.minX - d.minX) > tx || Math.abs(b.maxY - d.maxY) > ty || Math.abs(b.maxX - b.minX - P.w / d.s) > tx * 2)
+    if (!await askConfirm('Questo DXF non coincide con la tavola (è un altro disegno o è stato modificato). Usarlo lo stesso?', 'Usa', true)) return;
+  const c = renderDxf(prims, d.minX, d.maxY, d.s, P.w, P.h); const blob = await canvasToBlob(c, 'image/png');
+  P.dxfCol = true; P.asset = null; P.local = true; // finché il nuovo file non è caricato si usa la copia sul dispositivo
+  await Uploads.add('plan_' + P.id, blob, 'plan', P.id); Sync.mark('meta');
+  ST().dxfCol = true; Sync.mark('lib');
+  if (curPlan() === P) setPlanImage(P.id, c);
+  colBtnUpdate(); redraw(); toast('Colori del DXF aggiunti alla tavola');
+}
 function pct(arr, q) { const a = arr.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.floor(q * (a.length - 1))))]; }
 async function importDxf(file) {
   const b = openModal(`<h3>Importa DXF</h3><div class="mut">Lettura del disegno… (file grandi: qualche secondo)</div>`);
@@ -159,10 +197,7 @@ async function importDxf(file) {
   let dx; try { dx = new window.DxfParser().parseSync(text); } catch (e) { closeModal(); toast('DXF non leggibile: ' + (e.message || e), true, 6000); return; }
   const prims = dxfCollect(dx);
   if (!prims.length) { closeModal(); toast('Il DXF non contiene geometrie nello spazio modello', true); return; }
-  const xs = [], ys = []; const step = Math.max(1, Math.floor(prims.length / 4000));
-  for (let i = 0; i < prims.length; i += step) { const q = prims[i]; const pts = q.t === 'l' ? q.p : [q.p]; for (const p of pts) { if (isFinite(p[0]) && isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); } } }
-  let minX = pct(xs, 0.003), maxX = pct(xs, 0.997), minY = pct(ys, 0.003), maxY = pct(ys, 0.997);
-  const pw = (maxX - minX) * 0.03 || 1, ph = (maxY - minY) * 0.03 || 1; minX -= pw; maxX += pw; minY -= ph; maxY += ph;
+  const { minX, maxX, minY, maxY } = dxfBounds(prims);
   const W = maxX - minX, H = maxY - minY;
   const iu = dx.header && dx.header.$INSUNITS; const um = { 1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1 }[iu];
   const guess = um || (Math.max(W, H) > 3000 ? 0.001 : Math.max(W, H) > 300 ? 0.01 : 1);
@@ -176,15 +211,7 @@ async function importDxf(file) {
   b.querySelector('#iU').value = String(guess);
   b.querySelector('#iGo').onclick = async () => {
     const u = +b.querySelector('#iU').value, Q = +b.querySelector('#iQ').value, nm = b.querySelector('#iNm').value.trim() || baseName(file);
-    const s = Q / Math.max(W, H); const c = newCanvas(Math.ceil(W * s), Math.ceil(H * s)); const x = c.getContext('2d');
-    x.lineWidth = 1.5; x.lineJoin = 'round';
-    const X = p => (p[0] - minX) * s, Y = p => (maxY - p[1]) * s;
-    const byCol = new Map(); for (const q of prims) if (q.t === 'l') { const k = dxfInk(q.k); if (!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(q); }
-    for (const [k, arr] of byCol) { // salvata a colori; «tutto nero» si ricava al volo (toMono)
-      x.beginPath(); for (const q of arr) { x.moveTo(X(q.p[0]), Y(q.p[0])); for (let i = 1; i < q.p.length; i++) x.lineTo(X(q.p[i]), Y(q.p[i])); }
-      x.strokeStyle = k; x.stroke();
-    }
-    for (const q of prims) if (q.t === 't') { const fs = q.h * s; if (fs < 5 || fs > 400) continue; x.save(); x.translate(X(q.p), Y(q.p)); x.rotate(-q.r); x.font = fs + 'px sans-serif'; x.fillStyle = dxfInk(q.k); x.fillText(q.s, 0, 0); x.restore(); }
+    const s = Q / Math.max(W, H); const c = renderDxf(prims, minX, maxY, s, Math.ceil(W * s), Math.ceil(H * s));
     closeModal();
     await addPlan({ name: nm, src: 'dxf', canvas: c, ppm: s / u, dxf: { minX, maxY, s, u }, srcName: file.name, dxfCol: true });
   };
@@ -227,13 +254,14 @@ async function loadPlanImage(pid, force = false) {
   setPlanImage(pid, c); return S.planImg[pid];
 }
 async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica l'immagine della tavola, la vista resta
-  const P = curPlan(); if (!P || !P.dxfCol) return;
+  const P = curPlan(); if (!P || !(P.dxfCol || P.dxf)) return;
+  if (!P.dxfCol) return addDxfColors(P); // tavola DXF importata prima: si aggiungono i colori rileggendo il file
   ST().dxfCol = !ST().dxfCol; Sync.mark('lib'); colBtnUpdate();
   try { await loadPlanImage(P.id, true); } catch (e) { toast('Planimetria non disponibile: ' + (e.message || e), true); }
   redraw();
 }
 function colBtnUpdate() {
   const b = $('#zCol'); if (!b) return; const P = curPlan();
-  b.classList.toggle('hide', !(P && P.dxfCol)); b.classList.toggle('on', dxfColOn(P));
-  b.title = dxfColOn(P) ? 'Colori del DXF: accesi (tocca per tutto nero)' : 'Colori del DXF: spenti (tocca per vederli)';
+  b.classList.toggle('hide', !(P && (P.dxfCol || P.dxf))); b.classList.toggle('on', dxfColOn(P));
+  b.title = !P || !P.dxfCol ? 'Colori del DXF: tocca per aggiungerli (scegli lo stesso file DXF)' : dxfColOn(P) ? 'Colori del DXF: accesi (tocca per tutto nero)' : 'Colori del DXF: spenti (tocca per vederli)';
 }
