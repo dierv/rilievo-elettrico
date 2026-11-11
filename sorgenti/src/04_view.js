@@ -415,26 +415,9 @@ function updateHint() {
 }
 
 /* ============ AGGANCI PER IL DISEGNO DELLE STANZE ============ */
-function snapRoomPoint(bx, by, o = {}) { // o: prev, next (vertici adiacenti), first (per chiudere), skip ({room, i}) da ignorare
-  const P = curPlan(); const s = S.view.s; let px = bx, py = by; const guides = []; let mag = null, closing = false;
-  if (ST().ortho !== false) { // lati dritti: orizzontali/verticali se quasi allineati
-    const tol = Math.tan(7 * Math.PI / 180);
-    const lock = q => { if (!q) return; const dx = px - q[0], dy = py - q[1]; if (Math.hypot(dx, dy) * s < 18) return;
-      if (Math.abs(dy) <= Math.abs(dx) * tol) { py = q[1]; guides.push([[q[0], q[1]], [px, py]]); }
-      else if (Math.abs(dx) <= Math.abs(dy) * tol) { px = q[0]; guides.push([[q[0], q[1]], [px, py]]); } };
-    lock(o.prev); lock(o.next);
-  }
-  if (o.first && Math.hypot(bx - o.first[0], by - o.first[1]) * s < 24) return { x: o.first[0], y: o.first[1], mag: 'close', closing: true, guides: [] };
-  let best = null, bd = 16 / s; // calamita sui vertici delle altre stanze
-  for (const r of roomsOfPlan(P.id)) r.poly.forEach((p, i) => { if (o.skip && o.skip.room === r && o.skip.i === i) return; const d = Math.hypot(bx - p[0], by - p[1]); if (d < bd) { bd = d; best = p; } });
-  if (best) return { x: best[0], y: best[1], mag: 'vertex', closing, guides: [] };
-  let be = null, bde = 10 / s; // calamita sui lati delle altre stanze (pareti in comune)
-  for (const r of roomsOfPlan(P.id)) for (let i = 0; i < r.poly.length; i++) {
-    if (o.skip && o.skip.room === r) continue;
-    const q = segProj([px, py], r.poly[i], r.poly[(i + 1) % r.poly.length]); const d = Math.hypot(px - q[0], py - q[1]); if (d < bde) { bde = d; be = q; }
-  }
-  if (be) return { x: be[0], y: be[1], mag: 'edge', closing, guides };
-  return { x: px, y: py, mag: null, closing, guides };
+function snapRoomPoint(bx, by, o = {}) { // stanze a mano libera (richiesta dell'utente): nessun aggancio né raddrizzamento, il punto va dove tocchi. Solo il primo punto chiude la stanza
+  if (o.first && Math.hypot(bx - o.first[0], by - o.first[1]) * S.view.s < 24) return { x: o.first[0], y: o.first[1], mag: 'close', closing: true, guides: [] };
+  return { x: bx, y: by, mag: null, closing: false, guides: [] };
 }
 
 /* ============ INTERAZIONE ============ */
@@ -602,7 +585,7 @@ function startGesture(x0, y0) {
     return pointGesture(x0, y0, toolSnap(), p => {
       if (p.closing) { finishRoom(); return; }
       const last = poly[poly.length - 1]; if (last && Math.hypot(p.x - last[0], p.y - last[1]) * S.view.s < 4) return;
-      poly.push([r1(p.x), r1(p.y)]); renderPanel(); redraw();
+      poly.push([r2(p.x), r2(p.y)]); renderPanel(); redraw();
     });
   }
   if (tool === 'sym') {
@@ -647,7 +630,7 @@ function vertexGesture(h, x0, y0) {
   if (h.t === 'mid') { const p = r.poly[i], q = r.poly[(i + 1) % r.poly.length]; r.poly.splice(i + 1, 0, [r1((p[0] + q[0]) / 2), r1((p[1] + q[1]) / 2)]); i = i + 1; }
   const n = () => r.poly.length;
   const snap = (bx, by) => snapRoomPoint(bx, by, { prev: r.poly[(i - 1 + n()) % n()], next: r.poly[(i + 1) % n()], skip: { room: r, i } });
-  const upd = (x, y) => { const [bx, by] = toB(x, y); const p = snap(bx, by); r.poly[i] = [r1(p.x), r1(p.y)]; S.hover = p; S.loupe = curPtr.pen ? null : { sx: x, sy: y }; redraw(); };
+  const upd = (x, y) => { const [bx, by] = toB(x, y); const p = snap(bx, by); r.poly[i] = [r2(p.x), r2(p.y)]; S.hover = p; S.loupe = curPtr.pen ? null : { sx: x, sy: y }; redraw(); };
   upd(x0, y0);
   return {
     move(x, y) { upd(x, y); },
