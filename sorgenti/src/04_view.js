@@ -104,7 +104,7 @@ function draw() {
   const dpr = window.devicePixelRatio || 1; const W = c.clientWidth, H = c.clientHeight;
   if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
   const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = '#e3e6ea'; x.fillRect(0, 0, W, H);
-  const P = curPlan(); S.disp = new Map();
+  const P = curPlan(); S.disp = new Map(); colBtnUpdate();
   if (!P) { x.fillStyle = '#5d6672'; x.font = '16px sans-serif'; x.textAlign = 'center'; x.fillText('Aggiungi una tavola con "+ Tavola" (PDF, DXF o foto della pianta)', W / 2, H / 2); return; }
   const im = S.planImg[P.id]; const v = S.view;
   if (im) { x.save(); x.translate(v.tx, v.ty); if (v.r) x.rotate(v.r); x.scale(v.s, v.s); x.imageSmoothingEnabled = v.s < 1.5; x.drawImage(im.canvas, 0, 0); x.restore(); }
@@ -526,6 +526,7 @@ function initCanvas() {
   c.addEventListener('pointerleave', e => { if (e.pointerType === 'pen' && !ptrs.size) penHoverEnd(); });
   c.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = pos(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
   $('#zRot').onclick = () => toggleRotPanel();
+  $('#zCol').onclick = () => toggleDxfCol();
   $('#zIn').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1.5);
   $('#zOut').onclick = () => zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1 / 1.5);
   $('#zFit').onclick = fitView;

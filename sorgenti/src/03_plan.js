@@ -85,12 +85,21 @@ function dxfCollect(dx) {
   const layers = (dx.tables && dx.tables.layer && dx.tables.layer.layers) || {};
   const hid = n => { const L = layers[n]; return L && (L.visible === false || L.frozen); };
   const blocks = dx.blocks || {}; const out = [];
+  const W7 = 16777215; // ACI 7: bianco su AutoCAD (nero sul nostro fondo bianco)
+  const layOf = (e, ctx) => (e.layer === '0' || !e.layer) && ctx.lay ? ctx.lay : e.layer; // nei blocchi il layer 0 prende quello dell'inserimento
+  const colOf = (e, ctx) => { // colore come in AutoCAD: proprio, DaBlocco o DaLayer
+    if (e.colorIndex === 0) return ctx.col != null ? ctx.col : W7;
+    if (e.color != null) return e.color; // ACI proprio o colore vero (420); con DaLayer (256) il parser lo lascia vuoto
+    const L = layers[layOf(e, ctx)]; return L && L.color != null ? L.color : W7;
+  };
   const ocs = (e, M) => (e.extrusionDirectionZ < 0 || (e.extrusionDirection && e.extrusionDirection.z < 0)) ? mMul(M, [-1, 0, 0, 1, 0, 0]) : M;
-  const poly = (M, pts, closed) => { if (pts.length > 1) out.push({ t: 'l', p: pts.map(q => mPt(M, q[0], q[1])), c: !!closed }); };
-  function walk(ents, M, depth) {
+  let K = W7; // colore dell'entità in lavorazione
+  const poly = (M, pts, closed) => { if (pts.length > 1) out.push({ t: 'l', p: pts.map(q => mPt(M, q[0], q[1])), c: !!closed, k: K }); };
+  function walk(ents, M, depth, ctx) {
     for (const e of ents || []) {
-      if (e.inPaperSpace || hid(e.layer)) continue;
+      if (e.inPaperSpace || hid(layOf(e, ctx))) continue;
       try {
+        K = colOf(e, ctx);
         switch (e.type) {
           case 'LINE': poly(M, e.vertices.map(v => [v.x, v.y])); break;
           case 'LWPOLYLINE': case 'POLYLINE': {
@@ -114,21 +123,33 @@ function dxfCollect(dx) {
             const P = e.startPoint || e.position; if (!P) break; let s = String(e.text || '');
             if (e.type === 'MTEXT') s = s.replace(/\\P/g, ' ').replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, '').replace(/\\~/g, ' ');
             const h = (e.textHeight || e.height || 1); const p = mPt(M, P.x, P.y);
-            out.push({ t: 't', p, h: h * mScale(M), r: (e.rotation || 0) * Math.PI / 180 + mRot(M), s: s.slice(0, 60) }); break;
+            out.push({ t: 't', p, h: h * mScale(M), r: (e.rotation || 0) * Math.PI / 180 + mRot(M), s: s.slice(0, 60), k: K }); break;
           }
           case 'INSERT': {
             const b = blocks[e.name]; if (!b || depth > 6) break;
             const bp = b.position || { x: 0, y: 0 }; const sx = e.xScale || 1, sy = e.yScale || 1, a = (e.rotation || 0) * Math.PI / 180; const P = e.position || { x: 0, y: 0 };
             let T = [Math.cos(a) * sx, Math.sin(a) * sx, -Math.sin(a) * sy, Math.cos(a) * sy, P.x, P.y];
             T = mMul(T, [1, 0, 0, 1, -bp.x, -bp.y]);
-            walk(b.entities, mMul(ocs(e, M), T), depth + 1); break;
+            walk(b.entities, mMul(ocs(e, M), T), depth + 1, { lay: layOf(e, ctx), col: K }); break;
           }
         }
       } catch (err) { /* entità malformata: ignora */ }
     }
   }
-  walk(dx.entities, M_ID, 0);
+  walk(dx.entities, M_ID, 0, {});
   return out;
+}
+function dxfInk(n) { // colore AutoCAD (pensato per il fondo nero) → leggibile sul fondo bianco
+  if (n == null) return '#000000';
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  if (mx - mn < 40) { const v = 255 - Math.round((r + g + b) / 3); r = g = b = v; } // bianco e grigi: chiaro ↔ scuro come su AutoCAD
+  else { const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; if (L > 0.55) { const k = 0.55 / L; r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k); } } // giallo, celeste, verde chiaro: più scuri
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+function toMono(c) { // tavola DXF «tutto nero»: ogni tratto colorato diventa nero (i grigi restano grigi)
+  const x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height), a = d.data;
+  for (let i = 0; i < a.length; i += 4) { const v = Math.min(a[i], a[i + 1], a[i + 2]); a[i] = a[i + 1] = a[i + 2] = v; }
+  x.putImageData(d, 0, 0); return c;
 }
 function pct(arr, q) { const a = arr.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.max(0, Math.floor(q * (a.length - 1))))]; }
 async function importDxf(file) {
@@ -156,22 +177,25 @@ async function importDxf(file) {
   b.querySelector('#iGo').onclick = async () => {
     const u = +b.querySelector('#iU').value, Q = +b.querySelector('#iQ').value, nm = b.querySelector('#iNm').value.trim() || baseName(file);
     const s = Q / Math.max(W, H); const c = newCanvas(Math.ceil(W * s), Math.ceil(H * s)); const x = c.getContext('2d');
-    x.strokeStyle = '#000'; x.lineWidth = 1.5; x.lineJoin = 'round'; x.fillStyle = '#333';
+    x.lineWidth = 1.5; x.lineJoin = 'round';
     const X = p => (p[0] - minX) * s, Y = p => (maxY - p[1]) * s;
-    x.beginPath();
-    for (const q of prims) if (q.t === 'l') { x.moveTo(X(q.p[0]), Y(q.p[0])); for (let i = 1; i < q.p.length; i++) x.lineTo(X(q.p[i]), Y(q.p[i])); }
-    x.stroke();
-    for (const q of prims) if (q.t === 't') { const fs = q.h * s; if (fs < 5 || fs > 400) continue; x.save(); x.translate(X(q.p), Y(q.p)); x.rotate(-q.r); x.font = fs + 'px sans-serif'; x.fillText(q.s, 0, 0); x.restore(); }
+    const byCol = new Map(); for (const q of prims) if (q.t === 'l') { const k = dxfInk(q.k); if (!byCol.has(k)) byCol.set(k, []); byCol.get(k).push(q); }
+    for (const [k, arr] of byCol) { // salvata a colori; «tutto nero» si ricava al volo (toMono)
+      x.beginPath(); for (const q of arr) { x.moveTo(X(q.p[0]), Y(q.p[0])); for (let i = 1; i < q.p.length; i++) x.lineTo(X(q.p[i]), Y(q.p[i])); }
+      x.strokeStyle = k; x.stroke();
+    }
+    for (const q of prims) if (q.t === 't') { const fs = q.h * s; if (fs < 5 || fs > 400) continue; x.save(); x.translate(X(q.p), Y(q.p)); x.rotate(-q.r); x.font = fs + 'px sans-serif'; x.fillStyle = dxfInk(q.k); x.fillText(q.s, 0, 0); x.restore(); }
     closeModal();
-    await addPlan({ name: nm, src: 'dxf', canvas: c, ppm: s / u, dxf: { minX, maxY, s, u }, srcName: file.name });
+    await addPlan({ name: nm, src: 'dxf', canvas: c, ppm: s / u, dxf: { minX, maxY, s, u }, srcName: file.name, dxfCol: true });
   };
 }
 
-async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = false }) {
+async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = false, dxfCol = false }) {
   const id = uid('pl');
   let blob = jpeg ? null : await canvasToBlob(canvas, 'image/png'); // le foto in JPEG: in PNG peserebbero decine di MB
   if (!blob || blob.size > 19 * 1024 * 1024) blob = await canvasToBlob(canvas, 'image/jpeg', 0.88);
   const plan = { id, name, src, w: canvas.width, h: canvas.height, ppm: ppmV || null, dxf: dxf || null, srcName, local: true, asset: null, created: Date.now(), projV: 2 };
+  if (dxfCol) plan.dxfCol = true; // immagine salvata con i colori del DXF
   S.sv.plans.push(plan);
   await Uploads.add('plan_' + id, blob, 'plan', id);
   setPlanImage(id, canvas);
@@ -182,8 +206,10 @@ async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = fals
 }
 
 /* ---- immagine della tavola ---- */
+const dxfColOn = P => !!(P && P.dxfCol && ST().dxfCol); // tavola DXF mostrata con i colori originali
 function setPlanImage(pid, canvas) {
-  const w = canvas.width, h = canvas.height;
+  const w = canvas.width, h = canvas.height; const P = planOf(pid);
+  if (P && P.dxfCol && !ST().dxfCol) toMono(canvas); // il file resta a colori: in bianco e nero solo la copia mostrata
   // riquadro della parte disegnata (per inquadrare solo il disegno, non i bordi bianchi del foglio)
   const k = Math.max(1, Math.ceil(Math.max(w, h) / 900)); const sw = Math.floor(w / k), sh = Math.floor(h / k);
   const t = newCanvas(sw, sh); t.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
@@ -192,11 +218,22 @@ function setPlanImage(pid, canvas) {
   const m = 8; const cb = x1 > x0 ? [Math.max(0, (x0 - m) * k), Math.max(0, (y0 - m) * k), Math.min(w, (x1 + m) * k), Math.min(h, (y1 + m) * k)] : null;
   S.planImg[pid] = { canvas, w, h, cb };
 }
-async function loadPlanImage(pid) {
-  if (S.planImg[pid]) return S.planImg[pid];
+async function loadPlanImage(pid, force = false) {
+  if (S.planImg[pid] && !force) return S.planImg[pid];
   const p = planOf(pid); const url = blobUrl('plan_' + pid, p.asset);
   if (!url) throw new Error('Planimetria non disponibile su questo dispositivo');
   const img = new Image(); img.src = url; await img.decode();
   const c = newCanvas(img.naturalWidth, img.naturalHeight); c.getContext('2d').drawImage(img, 0, 0);
   setPlanImage(pid, c); return S.planImg[pid];
+}
+async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica l'immagine della tavola, la vista resta
+  const P = curPlan(); if (!P || !P.dxfCol) return;
+  ST().dxfCol = !ST().dxfCol; Sync.mark('lib'); colBtnUpdate();
+  try { await loadPlanImage(P.id, true); } catch (e) { toast('Planimetria non disponibile: ' + (e.message || e), true); }
+  redraw();
+}
+function colBtnUpdate() {
+  const b = $('#zCol'); if (!b) return; const P = curPlan();
+  b.classList.toggle('hide', !(P && P.dxfCol)); b.classList.toggle('on', dxfColOn(P));
+  b.title = dxfColOn(P) ? 'Colori del DXF: accesi (tocca per tutto nero)' : 'Colori del DXF: spenti (tocca per vederli)';
 }
