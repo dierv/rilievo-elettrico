@@ -277,12 +277,10 @@ function drawStroke(x, st, sel) {
 }
 /* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
 const MEAS_COL = '#0e7490';
-function measSnap(bx, by) { // aggancio agli angoli dei locali e al primo punto della misura (per chiudere)
-  const P = curPlan(); const tol = 14 / S.view.s; const pts = S.tmp.meas || [];
+function measSnap(bx, by) { // misura a mano libera (richiesta dell'utente): il punto va dove tocchi; solo il primo punto chiude il poligono
+  const tol = 14 / S.view.s; const pts = S.tmp.meas || [];
   if (pts.length >= 3 && dist(pts[0], [bx, by]) < tol * 1.4) return { x: pts[0][0], y: pts[0][1], mag: 'close' };
-  let best = null, bd = tol;
-  for (const r of roomsOfPlan(P.id)) for (const p of r.poly) { const d = dist(p, [bx, by]); if (d < bd) { bd = d; best = p; } }
-  return best ? { x: best[0], y: best[1], mag: 'pt' } : { x: bx, y: by };
+  return { x: bx, y: by };
 }
 function measTap(bx, by) {
   const T = S.tmp; T.meas = T.meas || []; if (T.closed) { T.meas = []; T.closed = false; }
