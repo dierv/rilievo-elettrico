@@ -48,7 +48,7 @@ function renderPanel() {
     const ids = selRoomIds(); const rs = ids.map(roomById).filter(Boolean);
     el.innerHTML = `<h2>Riquadro</h2>
       <ol class="small" style="padding-left:18px;margin:4px 0 10px;line-height:1.5"><li>Trascina un riquadro: <b>verso destra</b> prende le stanze tutte dentro (blu), <b>verso sinistra</b> anche quelle solo toccate (verde). Ogni riquadro si aggiunge.</li>
-      <li>Tocca una stanza per aggiungerla o toglierla.</li><li><b>Copia</b>, apri l'altra tavola (in alto) e premi <b>Incolla</b>.</li></ol>
+      <li>Tocca una stanza per aggiungerla o toglierla.</li><li><b>Sposta</b>: trascina dentro una stanza scelta e si muovono tutte quelle scelte.</li><li><b>Copia</b>, apri l'altra tavola (in alto) e premi <b>Incolla</b>.</li></ol>
       <div class="mut">Stanze scelte: <b>${rs.length}</b>${rs.length ? ' – ' + rs.map(r => esc(r.name)).join(', ') : ''}</div>
       <div class="row" style="margin-top:12px"><button data-act="boxClear" ${rs.length ? '' : 'disabled'}>Deseleziona</button><button class="pri" data-act="boxCopy" ${rs.length ? '' : 'disabled'}>Copia</button></div>
       ${n ? `<div class="row" style="margin-top:8px"><button class="pri" data-act="pasteRooms">📋 Incolla ${n} ${n === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}
@@ -139,7 +139,7 @@ function roomPanel(el, r) {
       <div class="row wrap" style="margin-top:8px">${dr ? `<button class="okb sm" data-act="confirmRoom">Conferma ${dr} bozze</button>` : ''}<button class="sm" data-act="dedupe">Rimuovi doppioni</button></div></div>
     ${hintList(hints)}
     ${crit.length ? `<div class="sec"><b>Criticità viste dall'AI</b><ul class="small" style="padding-left:18px;margin:6px 0">${crit.map(c => `<li>${esc(c)}</li>`).join('')}</ul></div>` : ''}
-    <div class="sec"><b>Contorno</b><div class="mut small" style="margin:4px 0 8px">Trascina i pallini blu sulla pianta per spostare gli angoli; tocca i "+" a metà lato per aggiungerne uno; porta un angolo sopra quello vicino per toglierlo.</div>
+    <div class="sec"><b>Contorno</b><div class="mut small" style="margin:4px 0 8px"><b>Sposta la stanza</b>: trascinala da dentro (simboli e foto restano dove sono sulla pianta). Trascina i pallini blu per spostare gli angoli; tocca i "+" a metà lato per aggiungerne uno; porta un angolo sopra quello vicino per toglierlo.</div>
       <div class="row wrap"><button class="sm" data-act="redrawMan">Ridisegna da capo</button><button class="sm danger" data-act="delRoom">Elimina stanza</button></div></div>
     <button class="ghost" style="width:100%;margin-top:6px" data-act="desel">← Panoramica tavola</button>`;
 }

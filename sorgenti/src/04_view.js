@@ -391,7 +391,7 @@ const ICONS = {
 };
 const TOOLS = [['sel', 'Seleziona'], ['box', 'Riquadro'], ['room', 'Stanza'], ['photo', 'Foto'], ['sym', 'Simbolo'], ['pen', 'Penna'], ['vnote', 'Nota audio'], ['meas', 'Misura'], ['cal', 'Scala']];
 const HINTS = {
-  sel: 'Tocca un simbolo, una foto o una stanza • trascina per spostare • due dita per spostare la pianta e zoomare',
+  sel: 'Tocca un simbolo, una foto o una stanza • trascina per spostare (la stanza: prima selezionala) • due dita per spostare la pianta e zoomare',
   room: 'Tocca gli angoli della stanza uno alla volta (tieni il dito per la lente) • tocca il primo punto per chiudere',
   photo: 'Tocca dove ti trovi: trascina verso dove guardi per una parete (più trascini, più il cono è lungo) • tocca senza trascinare per una foto puntuale (soffitto o pavimento)',
   pen: 'Disegna col dito • colore e spessore in basso • "Fine" per tornare alla freccia',
@@ -400,7 +400,7 @@ const HINTS = {
   cal: 'Tocca due punti di cui conosci la distanza (es. le estremità di una quota)',
   meas: 'Misura: tocca due o più punti, la distanza compare su ogni tratto • chiudi sul primo punto per l\'area',
   vnote: 'Tocca il punto della nota (tieni il dito per la lente), poi registra',
-  box: 'Trascina un riquadro: verso destra prende le stanze tutte dentro, verso sinistra anche quelle toccate • tocca una stanza per aggiungerla o toglierla',
+  box: 'Trascina un riquadro: verso destra prende le stanze tutte dentro, verso sinistra anche quelle toccate • tocca una stanza per aggiungerla o toglierla • trascina dentro una stanza scelta per spostarle tutte',
   paste: 'Trascina le stanze copiate dove vanno • due dita per spostare la pianta e zoomare • poi «Conferma»',
 };
 const PEN_HINTS = { // quando si usa la penna
@@ -459,7 +459,23 @@ function boxTap(sx, sy) { // tocco senza trascinare: aggiunge o toglie la stanza
   const P = curPlan(); const [bx, by] = toB(sx, sy); const r = roomsOfPlan(P.id).filter(q => pointInPoly(bx, by, q.poly)).sort((a, b) => polyArea(a.poly) - polyArea(b.poly))[0];
   if (!r) return; const ids = selRoomIds(); setRoomSel(ids.includes(r.id) ? ids.filter(i => i !== r.id) : ids.concat(r.id));
 }
+function roomMoveGesture(rs, x0, y0, onTap) { // sposta le stanze (solo il contorno: simboli e foto restano dove sono sulla pianta)
+  const [bx0, by0] = toB(x0, y0); const orig = rs.map(r => r.poly.map(p => [p[0], p[1]])); let moved = false;
+  return {
+    move(x, y) {
+      if (!moved && Math.hypot(x - x0, y - y0) < 8) return; if (!moved) pushUndo(); moved = true;
+      const [bx, by] = toB(x, y); const dx = bx - bx0, dy = by - by0; rs.forEach((r, k) => { r.poly = orig[k].map(p => [r2(p[0] + dx), r2(p[1] + dy)]); }); redraw();
+    },
+    up(x, y, cancel) {
+      if (!moved) { if (!cancel && onTap) onTap(); return; }
+      const pid = rs[0].planId; roomGeometryChanged(pid); Sync.mark('plan:' + pid); renderPanel(); redraw();
+    },
+    cancel() { if (moved) { rs.forEach((r, k) => { r.poly = orig[k]; }); redraw(); } },
+  };
+}
 function boxGesture(x0, y0) {
+  const [sbx, sby] = toB(x0, y0); const rs = selRoomIds().map(roomById).filter(r => r && r.planId === curPlan().id);
+  if (rs.some(r => pointInPoly(sbx, sby, r.poly))) return roomMoveGesture(rs, x0, y0, () => boxTap(x0, y0)); // dentro una stanza scelta: si spostano tutte quelle scelte
   let moved = false;
   return {
     move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; moved = true; S.tmp.box = { x0, y0, x1: x, y1: y }; redraw(); },
@@ -671,6 +687,8 @@ function startGesture(x0, y0) {
         },
       };
     }
+    const sr = S.sel && S.sel.t === 'room' ? roomById(S.sel.id) : null; // stanza selezionata: trascinandola da dentro si sposta
+    if (sr && sr.planId === P.id && (!h || h.t === 'room') && pointInPoly(...toB(x0, y0), sr.poly)) return roomMoveGesture([sr], x0, y0, () => { if (h && h.t === 'room') select('room', h.o.id); });
     return panGesture(x0, y0, () => { if (h && h.t === 'room') select('room', h.o.id); else select(null); });
   }
   if (tool === 'box') return S.tmp.paste ? pasteGesture(x0, y0) : boxGesture(x0, y0);
