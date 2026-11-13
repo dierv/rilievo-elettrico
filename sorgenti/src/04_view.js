@@ -177,7 +177,17 @@ function draw() {
   }
   // disegni a mano libera
   for (const d of S.draws) { if (d.planId !== P.id) continue; const sel = S.sel && S.sel.t === 'draw' && S.sel.id === d.id; for (const st of d.strokes) drawStroke(x, st, sel); }
-  if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false, true);
+  if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false);
+  if (S.tmp && S.tmp.snap) { // penna sollevata: il pezzetto previsto in più rientra nella punta (come in Note e Freeform)
+    const sn = S.tmp.snap, k = (performance.now() - sn.t0) / 170;
+    if (k >= 1) S.tmp.snap = null;
+    else {
+      const e = 1 - Math.pow(1 - k, 3); const keep = sn.len * (1 - e); const out = [sn.pts[0]]; let d = 0;
+      for (let i = 1; i < sn.pts.length && d < keep; i++) { const a = sn.pts[i - 1], b = sn.pts[i]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]) * S.view.s; if (d + l <= keep) { out.push(b); d += l; } else { const t = (keep - d) / l; out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, ...a.slice(2)]); d = keep; } }
+      if (out.length > 1) drawStroke(x, { pts: out, col: sn.col, w: sn.w }, false);
+      redraw();
+    }
+  }
   // elementi
   const R = ST().symPx / 2;
   if (S.showClosure && closedAt()) drawClosureGhosts(x, P, R);
@@ -279,7 +289,7 @@ function simplifyStroke(P, tol, ptol = 0.08) { // come simplifyPts, ma con la pr
   return P.filter((_, i) => keep[i]);
 }
 const prW = p => p == null ? 1 : 0.35 + 1.3 * p; // spessore relativo secondo la pressione (0,5 = normale)
-function strokePath(x, pts, tr, w, col, live) { // tratto morbido (curve fra i punti medi); con la penna segue la pressione e alla fine si assottiglia come una penna vera
+function strokePath(x, pts, tr, w, col) { // tratto morbido (curve fra i punti medi); con la penna lo spessore segue la pressione
   x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = col;
   const n = pts.length; if (!n) return;
   const P = pts.map(tr); const pr = pts.some(p => p.length > 2);
@@ -287,21 +297,16 @@ function strokePath(x, pts, tr, w, col, live) { // tratto morbido (curve fra i p
   const mid = i => [(P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2];
   if (!pr) { x.beginPath(); x.moveTo(P[0][0], P[0][1]); for (let i = 1; i < n - 1; i++) { const m = mid(i); x.quadraticCurveTo(P[i][0], P[i][1], m[0], m[1]); } x.lineTo(P[n - 1][0], P[n - 1][1]); x.lineWidth = w; x.stroke(); return; }
   const W = pts.map(p => w * prW(p[2] ?? 0.5));
-  if (!live && n > 2) { // penna sollevata: l'ultimo pezzetto del tratto si assottiglia
-    let tot = 0; for (let i = 1; i < n; i++) tot += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
-    const L = Math.min(tot * 0.3, Math.max(4, w * 2.5)); let d = 0;
-    for (let i = n - 1; i > 0 && d < L; i--) { W[i] *= 0.3 + 0.7 * d / L; d += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); }
-  }
   let a = P[0];
   for (let i = 1; i < n; i++) { // ogni pezzo va da un punto medio al successivo, col punto come controllo: niente spigoli
     const b = i < n - 1 ? mid(i) : P[i];
     x.beginPath(); x.moveTo(a[0], a[1]); x.quadraticCurveTo(P[i][0], P[i][1], b[0], b[1]); x.lineWidth = Math.max(0.6, i === 1 ? (W[0] + W[1]) / 2 : W[i]); x.stroke(); a = b;
   }
 }
-function drawStroke(x, st, sel, live) {
+function drawStroke(x, st, sel) {
   const w = Math.max(0.8, st.w * S.view.s); const tr = p => toS(p[0], p[1]);
   if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
-  strokePath(x, st.pts, tr, w, st.col, live);
+  strokePath(x, st.pred && st.pred.length ? st.pts.concat(st.pred) : st.pts, tr, w, st.col); // mentre scrivi l'inchiostro arriva un filo avanti alla punta (punti previsti)
 }
 /* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
 const MEAS_COL = '#0e7490';
@@ -690,6 +695,7 @@ function initCanvas() {
     } else if (gest && gest.move) {
       const ev = gest.fine && e.getCoalescedEvents ? e.getCoalescedEvents() : null; // la penna manda più punti per evento: si prendono tutti
       if (ev && ev.length > 1) for (const ce of ev) { const [cx, cy] = pos(ce); gest.move(cx, cy); } else gest.move(x, y);
+      if (gest && gest.predict) { let pe = null; try { pe = e.getPredictedEvents ? e.getPredictedEvents() : null; } catch (er) { } gest.predict(pe && pe.length ? pe.map(pos) : null, x, y, e.timeStamp); }
     }
   });
   const endPtr = (id, x, y, cancel) => {
@@ -820,18 +826,28 @@ function startGesture(x0, y0) {
   if (tool === 'pen' && S.pen.erase) return eraseGesture(x0, y0);
   if (tool === 'pen') {
     const [bx, by] = toB(x0, y0); const prs = () => +clamp(curPtr.p, 0.05, 1).toFixed(2); // con la penna il tratto segue la pressione
-    const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
+    const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s }; const raw = [];
     S.tmp.stroke = st; PEN.lastAt = performance.now(); redraw();
     const add = (x, y, min) => { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > min) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } };
     return {
       fine: true, pen: true, // riceve tutti i punti intermedi (scrittura piccola e veloce)
       move(x, y) { add(x, y, 0.75); PEN.lastAt = performance.now(); },
-      up(x, y, cancel) {
-        S.tmp.stroke = null; PEN.lastAt = performance.now();
-        if (cancel && st.pts.length < 2) { penLog('drop', null, 'annullato dal browser prima di scrivere'); redraw(); return; } // annullato dal browser prima di scrivere: niente
-        add(x, y, 0.2); finishStroke(st); // l'ultimo punto conta anche se il tratto è cortissimo
+      predict(list, x, y, t) { // punti previsti dal browser (o stimati dalla velocità): disegnati in anticipo, poi buttati
+        raw.push([x, y, t]); while (raw.length > 2 && t - raw[0][2] > 45) raw.shift();
+        let P = list;
+        if (!P || !P.length) { const a = raw[0]; const dt = t - a[2]; P = []; if (dt > 4) { const vx = (x - a[0]) / dt, vy = (y - a[1]) / dt; P = [[x + vx * 22, y + vy * 22]]; } }
+        let d = 0, l = [x, y]; const out = [];
+        for (const q of P) { const s2 = Math.hypot(q[0] - l[0], q[1] - l[1]); if (d + s2 > 16) { if (d < 16) { const k = (16 - d) / s2; out.push([l[0] + (q[0] - l[0]) * k, l[1] + (q[1] - l[1]) * k]); } break; } d += s2; out.push(q); l = q; } // al massimo 16 px avanti
+        st.pred = d > 0.8 || out.length > 1 ? out.map(([a, b]) => { const [bx, by] = toB(a, b); return curPtr.pen ? [bx, by, prs()] : [bx, by]; }) : null;
       },
-      finish() { S.tmp.stroke = null; PEN.lastAt = performance.now(); finishStroke(st); }, // sollevamento perso: il tratto si tiene così com'è
+      up(x, y, cancel) {
+        S.tmp.stroke = null; PEN.lastAt = performance.now(); const pred = st.pred; st.pred = null;
+        if (cancel && st.pts.length < 2) { penLog('drop', null, 'annullato dal browser prima di scrivere'); redraw(); return; } // annullato dal browser prima di scrivere: niente
+        add(x, y, 0.2);
+        if (pred && pred.length) { const tail = [st.pts[st.pts.length - 1], ...pred]; let len = 0; for (let i = 1; i < tail.length; i++) len += Math.hypot(tail[i][0] - tail[i - 1][0], tail[i][1] - tail[i - 1][1]) * S.view.s; if (len > 1.5) S.tmp.snap = { pts: tail, len, col: st.col, w: st.w, t0: performance.now() }; }
+        finishStroke(st); // l'ultimo punto conta anche se il tratto è cortissimo
+      },
+      finish() { S.tmp.stroke = null; st.pred = null; PEN.lastAt = performance.now(); finishStroke(st); }, // sollevamento perso: il tratto si tiene così com'è
       cancel() { S.tmp.stroke = null; penLog('drop', null, 'tratto annullato (' + st.pts.length + ' punti)'); redraw(); },
     };
   }
