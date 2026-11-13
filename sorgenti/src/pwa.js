@@ -251,6 +251,15 @@ async function recoverFromFolder() {
 }
 
 /* ---- interfaccia ---- */
+const appVersionText = () => { const m = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/.exec(typeof APP_VERSION === 'string' ? APP_VERSION : ''); return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}` : ''; };
+function updateBar() { // nuova versione già scaricata: un tocco e si ricarica (prima si salva tutto)
+  if ($('#updBar')) return;
+  const d = document.createElement('div'); d.id = 'updBar';
+  d.innerHTML = '<span>È pronta una nuova versione dell\'app.</span><button class="sm pri" id="updGo">Aggiorna ora</button><button class="sm" id="updLater">Dopo</button>';
+  document.body.appendChild(d);
+  $('#updGo').onclick = async () => { $('#updGo').disabled = true; try { await Sync.flush(); } catch (e) { /* si ricarica comunque: i dati sono già sul dispositivo */ } location.reload(); };
+  $('#updLater').onclick = () => d.remove();
+}
 let installEvt = null; const hadCtl = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
 function pwaHomeBanners() {
@@ -262,6 +271,7 @@ function pwaHomeBanners() {
   else b.push(`<div class="banner">📁 Archivio: cartella "<b>${esc(Archive.root.name)}</b>" ✓ <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`);
   if (!CAP.sample) b.push(aiAvailHtml());
   const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7); if (sp[m]) b.push(`<div class="mut small">✦ Spesa AI di questo mese su questo tablet: ${fmtUsd(sp[m])}</div>`);
+  if (appVersionText()) b.push(`<div class="mut small" id="appVer">Versione dell'app: ${appVersionText()}</div>`);
   return b;
 }
 function pwaHomeWire() {
@@ -321,7 +331,11 @@ async function pwaBoot() {
   window.addEventListener('appinstalled', () => { installEvt = null; toast('App installata: la trovi tra le app del tablet'); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) Archive.recheck(); });
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
-    try { await navigator.serviceWorker.register('sw.js'); } catch (e) { console.warn('sw', e); }
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtl) toast('App aggiornata: chiudila e riaprila per usare la nuova versione', false, 7000); });
+    let reg = null; try { reg = await navigator.serviceWorker.register('sw.js'); } catch (e) { console.warn('sw', e); }
+    // l'app installata spesso non si riapre da capo (resta in memoria): la nuova versione si cerca anche quando torna in primo piano e ogni 15 minuti
+    const check = () => { if (reg && navigator.onLine !== false) reg.update().catch(() => {}); };
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    setInterval(check, 15 * 60 * 1000);
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtl) updateBar(); });
   }
 }
