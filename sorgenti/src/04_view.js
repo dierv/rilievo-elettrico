@@ -121,6 +121,9 @@ function draw() {
     x.font = '600 13px sans-serif'; x.textAlign = 'center'; x.lineWidth = 3.5; x.strokeStyle = 'rgba(255,255,255,.9)';
     const lbl = (st === 'done' ? '✓ ' : st === 'warn' ? '! ' : '') + r.name; x.strokeText(lbl, cx, cy); x.fillStyle = textC; x.fillText(lbl, cx, cy);
   }
+  if (S.tmp && S.tmp.er && S.tool === 'pen') { // gomma
+    x.beginPath(); x.arc(S.tmp.er.sx, S.tmp.er.sy, S.pen.er / 2, 0, 7); x.fillStyle = 'rgba(255,255,255,.45)'; x.fill(); x.setLineDash([4, 3]); x.lineWidth = 1.5; x.strokeStyle = '#475569'; x.stroke(); x.setLineDash([]);
+  }
   if (S.tmp && S.tmp.box) { // riquadro di selezione: verso destra «finestra» (blu, tutto dentro), verso sinistra «interseca» (verde tratteggiato)
     const b = S.tmp.box, cross = b.x1 < b.x0; x.beginPath(); x.rect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
     x.fillStyle = cross ? 'rgba(22,163,74,.10)' : 'rgba(37,99,235,.10)'; x.fill(); x.setLineDash(cross ? [6, 4] : []); x.lineWidth = 1.5; x.strokeStyle = cross ? '#16a34a' : '#2563eb'; x.stroke(); x.setLineDash([]);
@@ -174,7 +177,7 @@ function draw() {
   }
   // disegni a mano libera
   for (const d of S.draws) { if (d.planId !== P.id) continue; const sel = S.sel && S.sel.t === 'draw' && S.sel.id === d.id; for (const st of d.strokes) drawStroke(x, st, sel); }
-  if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false);
+  if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false, true);
   // elementi
   const R = ST().symPx / 2;
   if (S.showClosure && closedAt()) drawClosureGhosts(x, P, R);
@@ -276,16 +279,29 @@ function simplifyStroke(P, tol, ptol = 0.08) { // come simplifyPts, ma con la pr
   return P.filter((_, i) => keep[i]);
 }
 const prW = p => p == null ? 1 : 0.35 + 1.3 * p; // spessore relativo secondo la pressione (0,5 = normale)
-function strokePath(x, pts, tr, w, col) { // tratto: unico se a spessore costante, a pezzi se c'è la pressione
+function strokePath(x, pts, tr, w, col, live) { // tratto morbido (curve fra i punti medi); con la penna segue la pressione e alla fine si assottiglia come una penna vera
   x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = col;
-  if (!pts.some(p => p.length > 2)) { x.beginPath(); pts.forEach((p, i) => { const [a, b] = tr(p); i ? x.lineTo(a, b) : x.moveTo(a, b); }); x.lineWidth = w; x.stroke(); return; }
-  if (pts.length === 1) { const [a, b] = tr(pts[0]); x.beginPath(); x.arc(a, b, w * prW(pts[0][2]) / 2, 0, 7); x.fillStyle = col; x.fill(); return; }
-  for (let i = 1; i < pts.length; i++) { const [a, b] = tr(pts[i - 1]), [c, d] = tr(pts[i]); x.beginPath(); x.moveTo(a, b); x.lineTo(c, d); x.lineWidth = Math.max(0.6, w * prW(((pts[i - 1][2] ?? 0.5) + (pts[i][2] ?? 0.5)) / 2)); x.stroke(); }
+  const n = pts.length; if (!n) return;
+  const P = pts.map(tr); const pr = pts.some(p => p.length > 2);
+  if (n === 1) { x.beginPath(); x.arc(P[0][0], P[0][1], Math.max(0.6, w * (pr ? prW(pts[0][2]) : 1)) / 2, 0, 7); x.fillStyle = col; x.fill(); return; }
+  const mid = i => [(P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2];
+  if (!pr) { x.beginPath(); x.moveTo(P[0][0], P[0][1]); for (let i = 1; i < n - 1; i++) { const m = mid(i); x.quadraticCurveTo(P[i][0], P[i][1], m[0], m[1]); } x.lineTo(P[n - 1][0], P[n - 1][1]); x.lineWidth = w; x.stroke(); return; }
+  const W = pts.map(p => w * prW(p[2] ?? 0.5));
+  if (!live && n > 2) { // penna sollevata: l'ultimo pezzetto del tratto si assottiglia
+    let tot = 0; for (let i = 1; i < n; i++) tot += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+    const L = Math.min(tot * 0.3, Math.max(4, w * 2.5)); let d = 0;
+    for (let i = n - 1; i > 0 && d < L; i--) { W[i] *= 0.3 + 0.7 * d / L; d += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); }
+  }
+  let a = P[0];
+  for (let i = 1; i < n; i++) { // ogni pezzo va da un punto medio al successivo, col punto come controllo: niente spigoli
+    const b = i < n - 1 ? mid(i) : P[i];
+    x.beginPath(); x.moveTo(a[0], a[1]); x.quadraticCurveTo(P[i][0], P[i][1], b[0], b[1]); x.lineWidth = Math.max(0.6, i === 1 ? (W[0] + W[1]) / 2 : W[i]); x.stroke(); a = b;
+  }
 }
-function drawStroke(x, st, sel) {
+function drawStroke(x, st, sel, live) {
   const w = Math.max(0.8, st.w * S.view.s); const tr = p => toS(p[0], p[1]);
   if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
-  strokePath(x, st.pts, tr, w, st.col);
+  strokePath(x, st.pts, tr, w, st.col, live);
 }
 /* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
 const MEAS_COL = '#0e7490';
@@ -319,12 +335,13 @@ function drawMeasure(x, T, hv, k) {
   else if (live.length > 2) { const last = live[live.length - 1]; const [a, b] = toS(last[0], last[1]); const t = 'totale ' + fmtM(inf.tot + (live.length > pts.length ? dist(pts[pts.length - 1], last) / k : 0)); x.font = '700 12px sans-serif'; x.textAlign = 'left'; x.lineWidth = 4; x.strokeStyle = 'rgba(255,255,255,.92)'; x.strokeText(t, a + 10, b + 18); x.fillStyle = MEAS_COL; x.fillText(t, a + 10, b + 18); }
 }
 function penHover(sx, sy) { // penna sospesa sopra lo schermo: mirino dove cadrà il punto
-  const P = curPlan(); if (!P || !['room', 'sym', 'cal', 'vnote', 'meas'].includes(S.tool)) return;
+  const P = curPlan(); if (P && S.tool === 'pen' && S.pen.erase) { S.tmp.er = { sx, sy }; redraw(); return; } // gomma: cerchio sotto la penna
+  if (!P || !['room', 'sym', 'cal', 'vnote', 'meas'].includes(S.tool)) return;
   if (PEN.hoverRq) return; PEN.hoverRq = requestAnimationFrame(() => {
     PEN.hoverRq = 0; if (ptrs.size) return; const [bx, by] = toB(sx, sy); const f = toolSnap(); S.hover = f ? f(bx, by) : { x: bx, y: by }; S.hover.pen = true; S.loupe = null; redraw();
   });
 }
-function penHoverEnd() { if (PEN.hoverRq) { cancelAnimationFrame(PEN.hoverRq); PEN.hoverRq = 0; } if (S.hover && S.hover.pen) { S.hover = null; redraw(); } }
+function penHoverEnd() { if (PEN.hoverRq) { cancelAnimationFrame(PEN.hoverRq); PEN.hoverRq = 0; } if (S.hover && S.hover.pen) { S.hover = null; redraw(); } if (S.tmp && S.tmp.er && !ptrs.size) { S.tmp.er = null; redraw(); } }
 function fingerGesture(x0, y0) { // penna in uso: il dito sposta la pianta; nella selezione un tocco seleziona ma non trascina oggetti
   if (S.tool === 'box' && !S.tmp.paste) return panGesture(x0, y0, () => boxTap(x0, y0));
   if (S.tool !== 'sel') return panGesture(x0, y0);
@@ -338,13 +355,56 @@ function toolSnap() { // come si aggancia il punto per lo strumento attivo (ugua
   if (S.tool === 'meas') return measSnap;
   return null;
 }
+function eraseAt(pid, cx, cy, r, before) { // gomma: toglie le parti dei tratti sotto il cerchio, il resto del tratto rimane (diviso in pezzi)
+  let any = false;
+  for (const d of S.draws) {
+    if (d.planId !== pid) continue; let out = null;
+    for (let k = 0; k < d.strokes.length; k++) {
+      const st = d.strokes[k]; const rr = r + st.w / 2; let hit = false;
+      for (let i = 0; i < st.pts.length && !hit; i++) { const a = st.pts[i], b = st.pts[i + 1] || a; if (segDist([cx, cy], a, b) < rr) hit = true; }
+      if (!hit) { if (out) out.push(st); continue; }
+      if (!any) { before(); any = true; } if (!out) out = d.strokes.slice(0, k);
+      const step = Math.max(r * 0.25, 0.3); const dense = [];
+      for (let i = 0; i < st.pts.length; i++) {
+        const a = st.pts[i], b = st.pts[i + 1]; dense.push(a); if (!b) break;
+        const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / step);
+        for (let j = 1; j < n; j++) { const t = j / n; dense.push(a.length > 2 && b.length > 2 ? [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+      }
+      let run = [];
+      const flush = () => { if (run.length >= 2) out.push({ ...st, pts: simplifyStroke(run, 0.6 / S.view.s).map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]) }); run = []; };
+      for (const p of dense) { if (Math.hypot(p[0] - cx, p[1] - cy) < rr) flush(); else run.push(p); }
+      flush();
+    }
+    if (out) d.strokes = out;
+  }
+  if (any) { S.draws = S.draws.filter(d => d.strokes.length); if (S.penDraw && !drawById(S.penDraw)) S.penDraw = null; }
+  return any;
+}
+function eraseGesture(x0, y0) {
+  const P = curPlan(); let undone = false, last = null, changed = false;
+  const at = (x, y) => {
+    S.tmp.er = { sx: x, sy: y }; const r = S.pen.er / 2 / S.view.s; const [bx, by] = toB(x, y);
+    const pts = []; if (last) { const n = Math.max(1, Math.ceil(Math.hypot(bx - last[0], by - last[1]) / (r * 0.5))); for (let i = 1; i <= n; i++) pts.push([last[0] + (bx - last[0]) * i / n, last[1] + (by - last[1]) * i / n]); } else pts.push([bx, by]);
+    last = [bx, by];
+    for (const c of pts) if (eraseAt(P.id, c[0], c[1], r, () => { if (!undone) { pushUndo(); undone = true; } })) changed = true;
+    redraw();
+  };
+  at(x0, y0); PEN.lastAt = performance.now();
+  const end = () => { S.tmp.er = null; PEN.lastAt = performance.now(); if (changed) { Sync.mark('plan:' + P.id); renderPalette(); } redraw(); };
+  return {
+    fine: true, pen: true,
+    move(x, y) { at(x, y); PEN.lastAt = performance.now(); },
+    up: end, finish: end,
+    cancel() { S.tmp.er = null; if (changed) Sync.mark('plan:' + P.id); redraw(); },
+  };
+}
 function finishStroke(st) {
   const P = curPlan(); if (!P) return; pushUndo();
   let pts = st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05, ...st.pts[0].slice(1)]] : simplifyStroke(st.pts, 0.6 / S.view.s);
   pts = pts.map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]);
   let d = S.penDraw && drawById(S.penDraw);
   if (!d || d.planId !== P.id) { d = { id: uid('d'), planId: P.id, strokes: [] }; S.draws.push(d); S.penDraw = d.id; } // cambiata tavola: nuovo disegno in quella corrente
-  d.strokes.push({ pts, col: st.col, w: +st.w.toFixed(3) }); Sync.mark('plan:' + P.id); renderPalette(); redraw();
+  d.strokes.push({ pts, col: st.col, w: +st.w.toFixed(3) }); penLog('stroke', null, st.pts.length + ' punti'); Sync.mark('plan:' + P.id); renderPalette(); redraw();
 }
 function drawLoupe(x, W, H, P, im, hv) { // lente d'ingrandimento sopra il dito, con mirino sul punto
   const LR = 74, Z = 4; let lx = S.loupe.sx, ly = S.loupe.sy - 120; if (ly - LR < 4) ly = S.loupe.sy + 120; lx = clamp(lx, LR + 4, W - LR - 4);
@@ -395,6 +455,7 @@ const HINTS = {
   room: 'Tocca gli angoli della stanza uno alla volta (tieni il dito per la lente) • tocca il primo punto per chiudere',
   photo: 'Tocca dove ti trovi: trascina verso dove guardi per una parete (più trascini, più il cono è lungo) • tocca senza trascinare per una foto puntuale (soffitto o pavimento)',
   pen: 'Disegna col dito • colore e spessore in basso • "Fine" per tornare alla freccia',
+  erase: 'Gomma: passa col dito sopra le scritte per cancellarle • due dita per spostare la pianta • tocca un colore per tornare a scrivere',
   sym: 'Scegli il simbolo in basso e tocca la pianta (tieni il dito per la lente)',
   symLine: 'Tocca i punti del percorso • "Fine" per chiudere la linea',
   cal: 'Tocca due punti di cui conosci la distanza (es. le estremità di una quota)',
@@ -408,6 +469,7 @@ const PEN_HINTS = { // quando si usa la penna
   paste: 'Penna: trascina le stanze copiate dove vanno • il dito sposta la pianta • poi «Conferma»',
   sel: 'Penna: tocca e trascina simboli, foto e stanze • dito: sposta la pianta (un tocco seleziona) • due dita per lo zoom',
   pen: 'Disegna con la penna: più premi, più il tratto è spesso • il dito sposta la pianta • "Fine" per tornare alla freccia',
+  erase: 'Gomma: passa con la penna sopra le scritte per cancellarle • il dito sposta la pianta • tocca un colore per tornare a scrivere',
 };
 function renderTools() {
   $('#tools').innerHTML = TOOLS.map(([t, n]) => `<button class="tbtn${S.tool === t ? ' on' : ''}" data-t="${t}"><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${n}</button>`).join('');
@@ -423,7 +485,7 @@ function setTool(t) {
   renderTools(); renderPalette(); updateHint(); renderPanel(); redraw();
 }
 function updateHint() {
-  let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine'; if (k === 'box' && S.tmp.paste) k = 'paste';
+  let k = S.tool; if (k === 'sym' && symOf(S.symSel).mount === 'lineare') k = 'symLine'; if (k === 'box' && S.tmp.paste) k = 'paste'; if (k === 'pen' && S.pen.erase) k = 'erase';
   const h = $('#hint'); h.textContent = penMode() ? PEN_HINTS[k] || (HINTS[k] || '').replace(' (tieni il dito per la lente)', ' con la penna') : HINTS[k] || '';
   if (S.tool === 'photo' && Compass.on) h.textContent = 'Bussola attiva: tocca dove ti trovi e il cono parte verso dove guardi (davanti a te = su sullo schermo) • trascina se vuoi dare tu la direzione';
   if (S.tool === 'sym' && ST().stamp && k === 'sym') h.textContent = 'Timbro attivo: ogni tocco mette un ' + symOf(S.symSel).name.split(/[(\/–]/)[0].trim().toLowerCase() + ' • ritocca "Timbro" per finire';
@@ -540,7 +602,13 @@ function confirmPaste() {
 /* ============ INTERAZIONE ============ */
 const ptrs = new Map(); let gest = null;
 // penna: appena l'app la vede, la penna disegna e posiziona, il dito sposta soltanto la pianta (e il palmo non lascia segni)
-const PEN = { seen: false, hoverRq: 0 }; let curPtr = { pen: false, p: 0.5 };
+const PEN = { seen: false, hoverRq: 0, lastAt: 0, log: [] }; let curPtr = { pen: false, p: 0.5 };
+function penLog(k, e, extra) { // registro della penna (Impostazioni → Copia registro penna): serve a capire sul tablet vero quando un tratto si perde
+  const t = Math.round(performance.now());
+  PEN.log.push(e ? [t, k, e.pointerType || '', e.pointerId ?? '', Math.round(e.clientX || 0), Math.round(e.clientY || 0), e.pressure != null ? +(+e.pressure).toFixed(2) : '', ptrs.size, gest ? (gest.pen ? 'pen' : gest.t || 'g') : '-', extra ?? ''] : [t, k, extra ?? '']);
+  if (PEN.log.length > 600) PEN.log.splice(0, PEN.log.length - 600);
+}
+function penBusy() { return S.tool === 'pen' && !!S.sv && (!!(gest && gest.pen) || performance.now() - PEN.lastAt < 2500); } // si sta scrivendo: salvataggio e aggiornamenti online aspettano una pausa
 const penMode = () => PEN.seen && ST().penOnly !== false;
 function hitTest(sx, sy) {
   const P = curPlan(); if (!P) return null; const R = ST().symPx / 2 + 8;
@@ -593,8 +661,12 @@ function initCanvas() {
     const isPen = e.pointerType === 'pen';
     if (isPen && !PEN.seen) { PEN.seen = true; if (ST().penOnly !== false) { toast('Penna rilevata: la penna disegna e posiziona, le dita spostano la pianta (si cambia in Impostazioni)', false, 6000); updateHint(); renderPanel(); } }
     const pm = penMode();
-    if (pm && !isPen && [...ptrs.values()].some(p => p.pen)) return; // palmo appoggiato mentre si scrive: ignorato
-    if (pm && isPen && ptrs.size) { if (gest && gest.cancel) gest.cancel(); gest = null; ptrs.clear(); } // la penna ha la precedenza sulle dita
+    if (pm && !isPen && [...ptrs.values()].some(p => p.pen)) { if (S.tool === 'pen') penLog('palm', e); return; } // palmo appoggiato mentre si scrive: ignorato
+    if (isPen || S.tool === 'pen') penLog('down', e);
+    if (pm && isPen && ptrs.size) { // la penna ha la precedenza sulle dita
+      const g = gest; gest = null; ptrs.clear();
+      if (g && g.pen) { penLog('stale', null, 'tratto rimasto aperto: salvato'); g.finish(); } else if (g && g.cancel) g.cancel(); // un tratto il cui sollevamento si è perso si tiene, non si butta
+    }
     if (isPen) penHoverEnd();
     c.setPointerCapture(e.pointerId); const [x, y] = pos(e); ptrs.set(e.pointerId, { x, y, pen: isPen });
     if (ptrs.size === 1) curPtr = { pen: isPen, p: isPen && e.pressure ? e.pressure : 0.5 };
@@ -620,12 +692,21 @@ function initCanvas() {
       if (ev && ev.length > 1) for (const ce of ev) { const [cx, cy] = pos(ce); gest.move(cx, cy); } else gest.move(x, y);
     }
   });
-  const up = e => {
-    if (!ptrs.has(e.pointerId)) return; const [x, y] = pos(e); ptrs.delete(e.pointerId);
+  const endPtr = (id, x, y, cancel) => {
+    ptrs.delete(id);
     if (gest && gest.t === 'pinch') { if (ptrs.size === 0) { gest = null; Compass.hold = false; Compass.anchor(); rotPanelSync(); } return; }
-    if (gest && gest.up && ptrs.size === 0) { const g = gest; gest = null; g.up(x, y, e.type === 'pointercancel'); }
+    if (gest && gest.up && ptrs.size === 0) { const g = gest; gest = null; g.up(x, y, cancel); }
+  };
+  const up = e => {
+    if (!ptrs.has(e.pointerId)) return; if (e.pointerType === 'pen' || S.tool === 'pen') penLog(e.type === 'pointerup' ? 'up' : 'cancel', e);
+    const [x, y] = pos(e); endPtr(e.pointerId, x, y, e.type === 'pointercancel');
   };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  c.addEventListener('lostpointercapture', e => { // il browser ha tolto il dito/la penna senza mandare il sollevamento: si chiude il gesto
+    const p = ptrs.get(e.pointerId); if (!p) return; penLog('lost', e);
+    if (p.pen && gest && gest.pen) { ptrs.delete(e.pointerId); if (!ptrs.size) { const g = gest; gest = null; g.finish(); } }
+    else endPtr(e.pointerId, p.x, p.y, true);
+  });
   // iPad/Safari: senza questo il sistema prova a interpretare i tocchi brevi della penna (zoom, selezione, scrittura a mano) e a volte li perde
   c.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
   c.addEventListener('touchmove', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
@@ -736,20 +817,22 @@ function startGesture(x0, y0) {
       cancel() { S.tmp = {}; redraw(); },
     };
   }
+  if (tool === 'pen' && S.pen.erase) return eraseGesture(x0, y0);
   if (tool === 'pen') {
     const [bx, by] = toB(x0, y0); const prs = () => +clamp(curPtr.p, 0.05, 1).toFixed(2); // con la penna il tratto segue la pressione
     const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
-    S.tmp.stroke = st; redraw();
+    S.tmp.stroke = st; PEN.lastAt = performance.now(); redraw();
     const add = (x, y, min) => { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > min) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } };
     return {
-      fine: true, // riceve tutti i punti intermedi (scrittura piccola e veloce)
-      move(x, y) { add(x, y, 0.75); },
+      fine: true, pen: true, // riceve tutti i punti intermedi (scrittura piccola e veloce)
+      move(x, y) { add(x, y, 0.75); PEN.lastAt = performance.now(); },
       up(x, y, cancel) {
-        S.tmp.stroke = null;
-        if (cancel && st.pts.length < 2) { redraw(); return; } // annullato dal browser prima di scrivere: niente
+        S.tmp.stroke = null; PEN.lastAt = performance.now();
+        if (cancel && st.pts.length < 2) { penLog('drop', null, 'annullato dal browser prima di scrivere'); redraw(); return; } // annullato dal browser prima di scrivere: niente
         add(x, y, 0.2); finishStroke(st); // l'ultimo punto conta anche se il tratto è cortissimo
       },
-      cancel() { S.tmp.stroke = null; redraw(); },
+      finish() { S.tmp.stroke = null; PEN.lastAt = performance.now(); finishStroke(st); }, // sollevamento perso: il tratto si tiene così com'è
+      cancel() { S.tmp.stroke = null; penLog('drop', null, 'tratto annullato (' + st.pts.length + ' punti)'); redraw(); },
     };
   }
   return panGesture(x0, y0);

@@ -2,7 +2,7 @@
 const ROOM_KINDS = ['', 'Abitazione – vano', 'Bagno / doccia', 'Cucina', 'Ufficio', 'Negozio / vendita', 'Magazzino', 'Produzione / officina', 'Locale tecnico', 'Servizi / spogliatoi', 'Corridoio / disimpegno', 'Esterno', 'Altro'];
 const ROOM_NAMES = ['Soggiorno', 'Cucina', 'Camera', 'Cameretta', 'Bagno', 'Corridoio', 'Ripostiglio', 'Ingresso', 'Balcone', 'Ufficio', 'Sala riunioni', 'Area vendita', 'Magazzino', 'Reparto produzione', 'Locale quadri', 'Spogliatoio', 'WC', 'Archivio', 'Esterno'];
 const KINDS = { parete: 'Parete', soffitto: 'Puntuale', quadro: 'Quadro', dettaglio: 'Dettaglio' };
-const PEN_COLS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#9333ea', '#0891b2', '#ec4899']; const PEN_W = [1, 2, 4, 8, 14];
+const PEN_COLS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#9333ea', '#0891b2', '#ec4899']; const PEN_W = [1, 2, 4, 8, 14]; const PEN_ER = [16, 32, 64]; // diametri della gomma (px sullo schermo)
 const symOptions = cur => Object.entries(CATS).map(([c, cd]) => `<optgroup label="${esc(cd.n)}">${S.lib.symbols.filter(s => s.cat === c).map(s => `<option value="${esc(s.code)}"${s.code === cur ? ' selected' : ''}>${esc(s.code)} – ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
 const imgSrc = ph => blobUrl('photo_' + ph.id, ph.asset) || ph.thumb || '';
 const aiChip = ph => ph.kind === 'dettaglio' ? '<span class="chip grey">Riferimento</span>' : ({ none: '<span class="chip grey">Da analizzare</span>', queued: '<span class="chip warn">In coda</span>', run: '<span class="chip warn">Analisi…</span>', done: '<span class="chip ai">Analizzata</span>', err: '<span class="chip bad">Errore</span>' }[ph.aiSt || 'none']);
@@ -92,6 +92,7 @@ function renderPanel() {
       <li><b>Destino</b>: tocca un elemento e scegli <span style="color:#dc2626">da rimuovere</span>, <span style="color:#ea580c">da sostituire</span> o <span style="color:#16a34a">nuovo</span>: compare sulla pianta, nel CSV e su layer DXF separati.</li>
       <li><b>Nota audio</b>: tocca un punto e registra (si apre il registratore del tablet), oppure scrivi o detta il testo.</li>
       <li><b>Tavola da foto</b>: + Tavola → Fotografa il disegno; trascina i 4 cerchi sugli angoli del foglio, scegli formato (A3, A4…) e scala del disegno: la tavola nasce dritta, pulita e in scala.</li>
+      <li><b>Gomma</b> (nella barra della penna): passa sopra le scritte e cancella solo dove passi; tre misure. Tocca un colore per tornare a scrivere. «Annulla» rimette quello che hai cancellato.</li>
       <li><b>Riquadro</b>: trascina un riquadro sulle stanze (verso destra quelle tutte dentro, verso sinistra anche quelle toccate), <b>Copia</b>, apri l'altra tavola e <b>Incolla</b>: le trascini dove vanno e confermi. Tra due tavole DXF finiscono già nella stessa posizione del disegno.</li>
       <li><b>Misura</b>: tocca due o più punti (vanno esattamente dove tocchi, senza agganci): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Colori del DXF</b> (interruttore «colori» sopra la rotazione, solo per le tavole DXF): mostra la pianta con i colori di AutoCAD o tutta in nero. Per una tavola importata prima, il primo tocco chiede lo stesso file DXF e aggiunge i colori senza spostare niente.</li>
@@ -342,11 +343,16 @@ function renderPenBar(p) {
   const d = S.penDraw && drawById(S.penDraw); const n = d ? d.strokes.length : 0;
   p.innerHTML = PEN_COLS.map(c => `<button class="sw${S.pen.col === c ? ' on' : ''}" data-pc="${c}" style="background:${c}" title="${c}"></button>`).join('') +
     `<label class="sw swc${PEN_COLS.includes(S.pen.col) ? '' : ' on'}" title="Altro colore" style="${PEN_COLS.includes(S.pen.col) ? '' : 'background:' + S.pen.col}"><input type="color" id="penCol" value="${S.pen.col}"></label>` +
-    `<span class="pcat">Spessore</span>` + PEN_W.map(w => `<button class="pw${S.pen.w === w ? ' on' : ''}" data-pw="${w}" title="${w} px"><span style="height:${Math.min(w, 14)}px;background:${S.pen.col}"></span></button>`).join('') +
+    (S.pen.erase ? '' : `<span class="pcat">Spessore</span>` + PEN_W.map(w => `<button class="pw${S.pen.w === w ? ' on' : ''}" data-pw="${w}" title="${w} px"><span style="height:${Math.min(w, 14)}px;background:${S.pen.col}"></span></button>`).join('')) +
+    `<button class="sm pe${S.pen.erase ? ' on' : ''}" data-pe="1" style="flex:none" title="Gomma: cancella dove passi"><svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:-4px"><path d="M16.2 3.8l4 4a1.5 1.5 0 0 1 0 2.1L11 19H6.5l-3.2-3.2a1.5 1.5 0 0 1 0-2.1l10.8-9.9a1.5 1.5 0 0 1 2.1 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 11l6 6M11 19h9" stroke="currentColor" stroke-width="1.8"/></svg> Gomma</button>` +
+    (S.pen.erase ? `<span class="pcat">Misura</span>` + PEN_ER.map(z => `<button class="pw${S.pen.er === z ? ' on' : ''}" data-pz="${z}" title="Gomma di ${z} px"><span style="width:${Math.round(z / 2.6)}px;height:${Math.round(z / 2.6)}px;border-radius:50%;background:#94a3b8"></span></button>`).join('') : '') +
     `<button class="sm" data-pu="1" ${n ? '' : 'disabled'} style="flex:none">↶ Togli ultimo</button><button class="sm okb" data-pf="1" style="flex:none">Fine</button>`;
-  p.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { S.pen.col = b.dataset.pc; renderPalette(); });
-  p.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { S.pen.w = +b.dataset.pw; renderPalette(); });
-  const ci = p.querySelector('#penCol'); ci.oninput = ci.onchange = () => { S.pen.col = ci.value; renderPalette(); };
+  const write = () => { S.pen.erase = false; S.tmp.er = null; updateHint(); }; // colore o spessore: si torna a scrivere
+  p.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { S.pen.col = b.dataset.pc; write(); renderPalette(); redraw(); });
+  p.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { S.pen.w = +b.dataset.pw; write(); renderPalette(); redraw(); });
+  p.querySelectorAll('[data-pz]').forEach(b => b.onclick = () => { S.pen.er = +b.dataset.pz; renderPalette(); });
+  p.querySelector('[data-pe]').onclick = () => { S.pen.erase = !S.pen.erase; if (!S.pen.erase) S.tmp.er = null; updateHint(); renderPalette(); redraw(); };
+  const ci = p.querySelector('#penCol'); ci.oninput = ci.onchange = () => { S.pen.col = ci.value; write(); renderPalette(); };
   p.querySelector('[data-pu]').onclick = () => { const d2 = S.penDraw && drawById(S.penDraw); if (!d2) return; pushUndo(); d2.strokes.pop(); if (!d2.strokes.length) { S.draws = S.draws.filter(x => x !== d2); S.penDraw = null; } Sync.mark('plan:' + d2.planId); renderPalette(); redraw(); };
   p.querySelector('[data-pf]').onclick = () => { const id = S.penDraw; setTool('sel'); if (id && drawById(id)) select('draw', id); };
 }
@@ -559,6 +565,7 @@ async function openSettings() {
     <label class="f">Disegno</label>
     <div class="row"><div style="flex:.5"><label class="f">Dimensione simboli (px)</label><input id="tSym" type="number" value="${st.symPx}"></div></div>
     <label class="row small"><input type="checkbox" id="tPen" style="width:auto;min-height:0" ${st.penOnly !== false ? 'checked' : ''}> Con la penna (Apple Pencil, S Pen…): la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo non lascia segni</label>
+    <div class="row small" style="gap:10px;align-items:center"><span class="mut" style="flex:1">Se un tratto della penna non compare: scrivi di nuovo, poi copia il registro della penna e mandalo all'assistenza.</span><button class="sm" id="tPenLog" style="flex:none">Copia registro penna</button></div>
     <div id="tStore" class="mut small" style="margin-top:10px"></div>
     <div class="acts"><button onclick="closeModal()">Annulla</button><button class="pri" id="tOk">Salva</button></div>`);
   b.querySelector('#tTier').value = st.tier;
@@ -569,6 +576,11 @@ async function openSettings() {
     st.symPx = clamp(num(b.querySelector('#tSym').value, 22), 12, 48); st.penOnly = b.querySelector('#tPen').checked;
     if (PLATFORM === 'pwa') pwaSettingsSave(b);
     Sync.mark('lib'); closeModal(); updateHint(); redraw();
+  };
+  b.querySelector('#tPenLog').onclick = async () => {
+    const txt = 'Registro penna ' + new Date().toLocaleString('it-IT') + ' — ' + navigator.userAgent + '\n' + PEN.log.map(r => r.join(' ')).join('\n');
+    try { await navigator.clipboard.writeText(txt); toast('Registro copiato: incollalo nella chat'); }
+    catch (e) { const t = document.createElement('textarea'); t.value = txt; t.style.cssText = 'width:100%;height:160px;font-size:11px'; b.querySelector('#tPenLog').parentElement.after(t); t.select(); toast('Seleziona il testo e copialo'); }
   };
   if (PLATFORM === 'pwa') pwaSettingsWire(b);
   const sEl = b.querySelector('#tStore');

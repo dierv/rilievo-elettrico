@@ -282,7 +282,7 @@ const PwaCloud = {
     const modal = $('#modal'), active = document.activeElement;
     const temporary = S.tmp || {};
     return !!(this.activities || this.planLoads.size || this.failedAssets?.size || Sync.paused || Rec.active || Archive.busy
-      || (typeof ptrs !== 'undefined' && ptrs.size) || (typeof gest !== 'undefined' && gest)
+      || (typeof ptrs !== 'undefined' && ptrs.size) || (typeof gest !== 'undefined' && gest) || (typeof penBusy === 'function' && penBusy()) // si sta scrivendo con la penna: la versione online aspetta una pausa
       || (typeof pendingPose !== 'undefined' && pendingPose) || (typeof pendingVn !== 'undefined' && pendingVn)
       || ['poly', 'line', 'cal', 'stroke'].some(key => temporary[key]?.length) || temporary.cam || temporary.vn
       || (modal && !modal.classList.contains('hide'))

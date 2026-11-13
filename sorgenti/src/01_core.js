@@ -197,7 +197,7 @@ const LEG_PPM = () => ST().symPx / 0.38; // px sullo schermo per metro di simbol
 /* ============ STATO ============ */
 const S = {
   lib: { symbols: DEFAULT_SYMBOLS.map(s => ({ ...s })), settings: { ...DEFAULT_SETTINGS }, legV: LEGENDA.v },
-  surveys: [], sv: null, rooms: [], items: [], photos: [], draws: [], vnotes: [], closure: {}, showClosure: false, planId: null, pen: { col: '#dc2626', w: 3 },
+  surveys: [], sv: null, rooms: [], items: [], photos: [], draws: [], vnotes: [], closure: {}, showClosure: false, planId: null, pen: { col: '#dc2626', w: 3, erase: false, er: 32 },
   sel: null, tool: 'sel', symSel: null, view: { s: 1, tx: 0, ty: 0, r: 0 }, planImg: {}, undo: [],
 };
 const ST = () => S.lib.settings;
@@ -262,7 +262,13 @@ const Sync = {
   mark(...keys) { keys.forEach(k => k && this.dirty.add(k)); if (S.sv) this.dirty.add('meta'); this.schedule(); },
   markItem(it) { this.mark(it.photoId ? 'photo:' + it.photoId : 'plan:' + it.planId); },
   del(path) { this.dels.add(path); this.schedule(); },
-  schedule(ms = 900) { clearTimeout(this.timer); this.timer = setTimeout(() => this.flush(), ms); syncBadge(); },
+  schedule(ms = 900) {
+    clearTimeout(this.timer); if (!this.since) this.since = Date.now();
+    this.timer = setTimeout(() => { // mentre si scrive con la penna si salva nella prima pausa (al massimo ogni 20 s): il salvataggio non ruba tempo ai tratti
+      if (typeof penBusy === 'function' && penBusy() && Date.now() - this.since < 20000) { this.schedule(800); return; }
+      this.since = 0; if (typeof penLog === 'function' && S.tool === 'pen') penLog('save', null, [...this.dirty].join(' ')); this.flush();
+    }, ms); syncBadge();
+  },
   async flush() {
     if (this.paused) { this.again = true; return; } // esportazione dello stato di fatto in corso: i dati in memoria non sono quelli attuali
     if (this.busy) { this.again = true; return; }

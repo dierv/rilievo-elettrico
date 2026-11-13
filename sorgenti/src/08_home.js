@@ -277,6 +277,8 @@ async function boot() {
   $('#fJson').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importBackup(f); };
   $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') { if (Rec.active) return; closeModal(); if (pendingPose) { pendingPose = null; S.tmp = {}; redraw(); } if (pendingVn) { const rep = pendingVn.replace; pendingVn = null; if (!rep) setTool('sel'); } } });
   document.addEventListener('visibilitychange', () => { if (document.hidden && Sync.pending()) Sync.flush(); });
+  document.addEventListener('visibilitychange', () => penLog(document.hidden ? 'hidden' : 'visible'));
+  if (typeof PwaCloud !== 'undefined' && PwaCloud.lock) { const lock = PwaCloud.lock.bind(PwaCloud); PwaCloud.lock = v => { penLog(v ? 'lock' : 'unlock', null, 'aggiornamento dalla versione online'); return lock(v); }; }
   window.addEventListener('keydown', e => {
     const onPlan = !$('#sv').classList.contains('hide') && !(e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) && $('#modal').classList.contains('hide');
     if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !$('#sv').classList.contains('hide')) { e.preventDefault(); doUndo(); }
