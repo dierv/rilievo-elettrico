@@ -2,7 +2,7 @@
 const ROOM_KINDS = ['', 'Abitazione – vano', 'Bagno / doccia', 'Cucina', 'Ufficio', 'Negozio / vendita', 'Magazzino', 'Produzione / officina', 'Locale tecnico', 'Servizi / spogliatoi', 'Corridoio / disimpegno', 'Esterno', 'Altro'];
 const ROOM_NAMES = ['Soggiorno', 'Cucina', 'Camera', 'Cameretta', 'Bagno', 'Corridoio', 'Ripostiglio', 'Ingresso', 'Balcone', 'Ufficio', 'Sala riunioni', 'Area vendita', 'Magazzino', 'Reparto produzione', 'Locale quadri', 'Spogliatoio', 'WC', 'Archivio', 'Esterno'];
 const KINDS = { parete: 'Parete', soffitto: 'Puntuale', quadro: 'Quadro', dettaglio: 'Dettaglio' };
-const PEN_COLS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#9333ea', '#0891b2', '#ec4899']; const PEN_W = [1, 2, 4, 8, 14]; const PEN_ER = [16, 32, 64]; // diametri della gomma (px sullo schermo)
+const PEN_COLS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#c026d3', '#0891b2']; const PEN_CN = ['Nero', 'Rosso', 'Blu', 'Verde', 'Magenta', 'Ciano']; const PEN_W = [1.5, 3, 6]; const PEN_WN = ['Sottile', 'Medio', 'Spesso']; const PEN_ER = [16, 32, 64]; // diametri della gomma (px sullo schermo)
 const symOptions = cur => Object.entries(CATS).map(([c, cd]) => `<optgroup label="${esc(cd.n)}">${S.lib.symbols.filter(s => s.cat === c).map(s => `<option value="${esc(s.code)}"${s.code === cur ? ' selected' : ''}>${esc(s.code)} – ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
 const imgSrc = ph => blobUrl('photo_' + ph.id, ph.asset) || ph.thumb || '';
 const aiChip = ph => ph.kind === 'dettaglio' ? '<span class="chip grey">Riferimento</span>' : ({ none: '<span class="chip grey">Da analizzare</span>', queued: '<span class="chip warn">In coda</span>', run: '<span class="chip warn">Analisi…</span>', done: '<span class="chip ai">Analizzata</span>', err: '<span class="chip bad">Errore</span>' }[ph.aiSt || 'none']);
@@ -341,12 +341,12 @@ function deletePhoto(ph) {
 /* ============ TAVOLOZZA SIMBOLI ============ */
 function renderPenBar(p) {
   const d = S.penDraw && drawById(S.penDraw); const n = d ? d.strokes.length : 0;
-  p.innerHTML = PEN_COLS.map(c => `<button class="sw${S.pen.col === c ? ' on' : ''}" data-pc="${c}" style="background:${c}" title="${c}"></button>`).join('') +
+  p.innerHTML = PEN_COLS.map((c, i) => `<button class="sw${S.pen.col === c ? ' on' : ''}" data-pc="${c}" style="background:${c}" title="${PEN_CN[i]}"></button>`).join('') +
     `<label class="sw swc${PEN_COLS.includes(S.pen.col) ? '' : ' on'}" title="Altro colore" style="${PEN_COLS.includes(S.pen.col) ? '' : 'background:' + S.pen.col}"><input type="color" id="penCol" value="${S.pen.col}"></label>` +
-    (S.pen.erase ? '' : `<span class="pcat">Spessore</span>` + PEN_W.map(w => `<button class="pw${S.pen.w === w ? ' on' : ''}" data-pw="${w}" title="${w} px"><span style="height:${Math.min(w, 14)}px;background:${S.pen.col}"></span></button>`).join('')) +
+    (S.pen.erase ? '' : PEN_W.map((w, i) => `<button class="pw${S.pen.w === w ? ' on' : ''}" data-pw="${w}" title="${PEN_WN[i]}"><span style="height:${w}px;background:${S.pen.col}"></span></button>`).join('')) +
     `<button class="sm pe${S.pen.erase ? ' on' : ''}" data-pe="1" style="flex:none" title="Gomma: cancella dove passi"><svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:-4px"><path d="M16.2 3.8l4 4a1.5 1.5 0 0 1 0 2.1L11 19H6.5l-3.2-3.2a1.5 1.5 0 0 1 0-2.1l10.8-9.9a1.5 1.5 0 0 1 2.1 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 11l6 6M11 19h9" stroke="currentColor" stroke-width="1.8"/></svg> Gomma</button>` +
-    (S.pen.erase ? `<span class="pcat">Misura</span>` + PEN_ER.map(z => `<button class="pw${S.pen.er === z ? ' on' : ''}" data-pz="${z}" title="Gomma di ${z} px"><span style="width:${Math.round(z / 2.6)}px;height:${Math.round(z / 2.6)}px;border-radius:50%;background:#94a3b8"></span></button>`).join('') : '') +
-    `<button class="sm" data-pu="1" ${n ? '' : 'disabled'} style="flex:none">↶ Togli ultimo</button><button class="sm okb" data-pf="1" style="flex:none">Fine</button>`;
+    (S.pen.erase ? PEN_ER.map(z => `<button class="pw${S.pen.er === z ? ' on' : ''}" data-pz="${z}" title="Gomma di ${z} px"><span style="width:${Math.round(z / 2.6)}px;height:${Math.round(z / 2.6)}px;border-radius:50%;background:#94a3b8"></span></button>`).join('') : '') +
+    `<button class="sm" data-pu="1" ${n ? '' : 'disabled'} style="flex:none" title="Togli l'ultimo tratto">↶ Indietro</button><button class="sm okb" data-pf="1" style="flex:none">Fine</button>`;
   const write = () => { S.pen.erase = false; S.tmp.er = null; updateHint(); }; // colore o spessore: si torna a scrivere
   p.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { S.pen.col = b.dataset.pc; write(); renderPalette(); redraw(); });
   p.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { S.pen.w = +b.dataset.pw; write(); renderPalette(); redraw(); });
