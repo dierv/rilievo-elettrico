@@ -125,6 +125,7 @@ function dxfCollect(dx) {
             const h = (e.textHeight || e.height || 1); const p = mPt(M, P.x, P.y);
             out.push({ t: 't', p, h: h * mScale(M), r: (e.rotation || 0) * Math.PI / 180 + mRot(M), s: s.slice(0, 60), k: K }); break;
           }
+          case 'DIMENSION': { const b = e.block && blocks[e.block]; if (b && depth <= 6) walk(b.entities, M, depth + 1, { lay: layOf(e, ctx), col: K }); break; } // quote: il disegno è nel blocco *D
           case 'INSERT': {
             const b = blocks[e.name]; if (!b || depth > 6) break;
             const bp = b.position || { x: 0, y: 0 }; const sx = e.xScale || 1, sy = e.yScale || 1, a = (e.rotation || 0) * Math.PI / 180; const P = e.position || { x: 0, y: 0 };
@@ -151,7 +152,21 @@ function toMono(c) { // tavola DXF «tutto nero»: ogni tratto colorato diventa 
   for (let i = 0; i < a.length; i += 4) { const v = Math.min(a[i], a[i + 1], a[i + 2]); a[i] = a[i + 1] = a[i + 2] = v; }
   x.putImageData(d, 0, 0); return c;
 }
-function dxfBounds(prims) { // estensione del disegno (senza i punti isolati lontani) + 3% di margine
+function dxfBounds(prims) { // estensione del disegno come «zoom estensioni» di AutoCAD: tutto, tranne i gruppi isolati lontanissimi + 3% di margine
+  const xs = [], ys = [];
+  for (const q of prims) { const pts = q.t === 'l' ? q.p : [q.p]; for (const p of pts) if (isFinite(p[0]) && isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); } }
+  const ext = arr => { // si scarta un gruppo in fondo solo se il vuoto che lo separa è più grande di 3 volte tutto il resto del disegno
+    const a = Float64Array.from(arr).sort(); const n = a.length; if (!n) return [0, 1];
+    let lo = 0, hi = n - 1; const qlo = a[Math.floor(n * 0.02)], qhi = a[Math.ceil(n * 0.98) - 1];
+    for (let i = n - 1; i > n / 2; i--) if (a[i] - a[i - 1] > 3 * Math.max(a[i - 1] - qlo, 1e-9)) hi = i - 1;
+    for (let i = 0; i < n / 2 - 1; i++) if (a[i + 1] - a[i] > 3 * Math.max(qhi - a[i + 1], 1e-9)) lo = i + 1;
+    return [a[lo], a[Math.max(hi, lo)]];
+  };
+  let [minX, maxX] = ext(xs), [minY, maxY] = ext(ys);
+  const pw = (maxX - minX) * 0.03 || 1, ph = (maxY - minY) * 0.03 || 1; minX -= pw; maxX += pw; minY -= ph; maxY += ph;
+  return { minX, maxX, minY, maxY };
+}
+function dxfBoundsPct(prims) { // calcolo usato fino al 13/11/2026 (percentili: poteva tagliare i bordi); serve solo a riconoscere lo stesso DXF delle tavole importate prima
   const xs = [], ys = []; const step = Math.max(1, Math.floor(prims.length / 4000));
   for (let i = 0; i < prims.length; i += step) { const q = prims[i]; const pts = q.t === 'l' ? q.p : [q.p]; for (const p of pts) { if (isFinite(p[0]) && isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); } } }
   let minX = pct(xs, 0.003), maxX = pct(xs, 0.997), minY = pct(ys, 0.003), maxY = pct(ys, 0.997);
@@ -179,8 +194,8 @@ async function addDxfColors(P) { // tavola DXF importata prima dei colori: si ri
   toast('Lettura del DXF…', false, 8000); await needLib('dxf');
   let dx; try { dx = new window.DxfParser().parseSync(await file.text()); } catch (e) { toast('DXF non leggibile: ' + (e.message || e), true, 6000); return; }
   const prims = dxfCollect(dx); if (!prims.length) { toast('Il DXF non contiene geometrie nello spazio modello', true); return; }
-  const d = P.dxf, b = dxfBounds(prims), tx = (b.maxX - b.minX) * 0.02, ty = (b.maxY - b.minY) * 0.02;
-  if (Math.abs(b.minX - d.minX) > tx || Math.abs(b.maxY - d.maxY) > ty || Math.abs(b.maxX - b.minX - P.w / d.s) > tx * 2)
+  const d = P.dxf; const same = b => { const tx = (b.maxX - b.minX) * 0.02, ty = (b.maxY - b.minY) * 0.02; return Math.abs(b.minX - d.minX) <= tx && Math.abs(b.maxY - d.maxY) <= ty && Math.abs(b.maxX - b.minX - P.w / d.s) <= tx * 2; };
+  if (!same(dxfBounds(prims)) && !same(dxfBoundsPct(prims)))
     if (!await askConfirm('Questo DXF non coincide con la tavola (è un altro disegno o è stato modificato). Usarlo lo stesso?', 'Usa', true)) return;
   const c = renderDxf(prims, d.minX, d.maxY, d.s, P.w, P.h); const blob = await canvasToBlob(c, 'image/png');
   P.dxfCol = true; P.asset = null; P.local = true; // finché il nuovo file non è caricato si usa la copia sul dispositivo
