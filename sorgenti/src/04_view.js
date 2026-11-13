@@ -223,7 +223,7 @@ function draw() {
   if (T.line && T.line.length) { const live = hv && S.tool === 'sym' ? T.line.concat([[hv.x, hv.y]]) : T.line; pl(live, symOf(S.symSel).color, false); T.line.forEach(p => dot(p, symOf(S.symSel).color)); }
   if (T.cal && T.cal.length) { const live = hv && S.tool === 'cal' ? T.cal.concat([[hv.x, hv.y]]) : T.cal; pl(live, '#dc2626', false); T.cal.forEach(p => dot(p, '#dc2626')); }
   if (T.meas && T.meas.length) drawMeasure(x, T, hv, k);
-  if (T.cam) { const [sx, sy] = toS(T.cam.x, T.cam.y); if (T.cam.pt) { x.beginPath(); x.arc(sx, sy, 22, 0, 7); x.fillStyle = 'rgba(29,78,216,.15)'; x.fill(); x.setLineDash([4, 3]); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); x.setLineDash([]); } else { const half = Math.atan(Math.tan(ST().fov * Math.PI / 360) * 0.75); x.beginPath(); x.moveTo(sx, sy); x.arc(sx, sy, Math.max(10, T.cam.len * v.s), T.cam.a - half, T.cam.a + half); x.closePath(); x.fillStyle = 'rgba(29,78,216,.18)'; x.fill(); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); } dot([T.cam.x, T.cam.y], '#1d4ed8'); }
+  if (T.cam) { const [sx, sy] = toS(T.cam.x, T.cam.y); if (T.cam.pt) { x.beginPath(); x.arc(sx, sy, 22, 0, 7); x.fillStyle = 'rgba(29,78,216,.15)'; x.fill(); x.setLineDash([4, 3]); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); x.setLineDash([]); } else { const half = Math.atan(Math.tan(ST().fov * Math.PI / 360) * 0.75); x.beginPath(); x.moveTo(sx, sy); x.arc(sx, sy, Math.max(10, T.cam.len * v.s), T.cam.a + vr() - half, T.cam.a + vr() + half); x.closePath(); x.fillStyle = 'rgba(29,78,216,.18)'; x.fill(); x.strokeStyle = '#1d4ed8'; x.lineWidth = 2; x.stroke(); } dot([T.cam.x, T.cam.y], '#1d4ed8'); }
   if (hv && hv.guides) hv.guides.forEach(([a, b]) => { const [ax, ay] = toS(a[0], a[1]), [bx, by] = toS(b[0], b[1]); x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.strokeStyle = 'rgba(220,38,38,.7)'; x.lineWidth = 1.2; x.setLineDash([4, 4]); x.stroke(); x.setLineDash([]); });
   if (hv && hv.pen) { const [a, b] = toS(hv.x, hv.y); x.beginPath(); [[-1, 0], [1, 0], [0, -1], [0, 1]].forEach(([u, w]) => { x.moveTo(a + u * 5, b + w * 5); x.lineTo(a + u * 16, b + w * 16); }); x.strokeStyle = 'rgba(255,255,255,.9)'; x.lineWidth = 4; x.stroke(); x.strokeStyle = hv.mag ? '#dc2626' : '#0f172a'; x.lineWidth = 1.6; x.stroke(); } // mirino della penna sospesa (con bordo bianco per vederlo sopra la pianta)
   if (hv) { dot([hv.x, hv.y], hv.mag ? '#dc2626' : '#0f172a', hv.pen ? (hv.mag ? 5 : 3) : hv.mag ? 7 : 5); }
@@ -343,7 +343,7 @@ function finishStroke(st) {
   let pts = st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05, ...st.pts[0].slice(1)]] : simplifyStroke(st.pts, 0.6 / S.view.s);
   pts = pts.map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]);
   let d = S.penDraw && drawById(S.penDraw);
-  if (!d) { d = { id: uid('d'), planId: P.id, strokes: [] }; S.draws.push(d); S.penDraw = d.id; }
+  if (!d || d.planId !== P.id) { d = { id: uid('d'), planId: P.id, strokes: [] }; S.draws.push(d); S.penDraw = d.id; } // cambiata tavola: nuovo disegno in quella corrente
   d.strokes.push({ pts, col: st.col, w: +st.w.toFixed(3) }); Sync.mark('plan:' + P.id); renderPalette(); redraw();
 }
 function drawLoupe(x, W, H, P, im, hv) { // lente d'ingrandimento sopra il dito, con mirino sul punto
@@ -615,7 +615,10 @@ function initCanvas() {
       if (!gest.rot) da = 0;
       const cs = Math.cos(da), sn = Math.sin(da); const ox = gest.m0[0] - v0.tx, oy = gest.m0[1] - v0.ty;
       S.view.s = ns; S.view.r = (v0.r || 0) + da; S.view.tx = m[0] - (ox * cs - oy * sn) * k; S.view.ty = m[1] - (ox * sn + oy * cs) * k; if (gest.rot) rotBtnUpdate(); redraw();
-    } else if (gest && gest.move) gest.move(x, y);
+    } else if (gest && gest.move) {
+      const ev = gest.fine && e.getCoalescedEvents ? e.getCoalescedEvents() : null; // la penna manda più punti per evento: si prendono tutti
+      if (ev && ev.length > 1) for (const ce of ev) { const [cx, cy] = pos(ce); gest.move(cx, cy); } else gest.move(x, y);
+    }
   });
   const up = e => {
     if (!ptrs.has(e.pointerId)) return; const [x, y] = pos(e); ptrs.delete(e.pointerId);
@@ -623,6 +626,9 @@ function initCanvas() {
     if (gest && gest.up && ptrs.size === 0) { const g = gest; gest = null; g.up(x, y, e.type === 'pointercancel'); }
   };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  // iPad/Safari: senza questo il sistema prova a interpretare i tocchi brevi della penna (zoom, selezione, scrittura a mano) e a volte li perde
+  c.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  c.addEventListener('touchmove', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
   c.addEventListener('pointerleave', e => { if (e.pointerType === 'pen' && !ptrs.size) penHoverEnd(); });
   c.addEventListener('wheel', e => { e.preventDefault(); const [x, y] = pos(e); zoomAt(x, y, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
   $('#zRot').onclick = () => toggleRotPanel();
@@ -734,9 +740,15 @@ function startGesture(x0, y0) {
     const [bx, by] = toB(x0, y0); const prs = () => +clamp(curPtr.p, 0.05, 1).toFixed(2); // con la penna il tratto segue la pressione
     const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
     S.tmp.stroke = st; redraw();
+    const add = (x, y, min) => { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > min) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } };
     return {
-      move(x, y) { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > 1.5) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } },
-      up(x, y, cancel) { S.tmp.stroke = null; if (cancel) { redraw(); return; } finishStroke(st); },
+      fine: true, // riceve tutti i punti intermedi (scrittura piccola e veloce)
+      move(x, y) { add(x, y, 0.75); },
+      up(x, y, cancel) {
+        S.tmp.stroke = null;
+        if (cancel && st.pts.length < 2) { redraw(); return; } // annullato dal browser prima di scrivere: niente
+        add(x, y, 0.2); finishStroke(st); // l'ultimo punto conta anche se il tratto è cortissimo
+      },
       cancel() { S.tmp.stroke = null; redraw(); },
     };
   }
