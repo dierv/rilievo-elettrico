@@ -2,9 +2,14 @@
    Tutto resta sul dispositivo: niente account, niente sincronizzazione, niente service worker.
    Archivio automatico nella cartella Documenti/SopraLux (Android: app File → Documenti; iPad: app File → Sul mio iPad → SopraLux).
    Questo file si carica solo nella build dell'app (build_app.sh), dopo pwa.js: le funzioni con lo stesso nome sostituiscono quelle della PWA. */
-const NAT = window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() ? {
-  fs: Capacitor.registerPlugin('Filesystem'), share: Capacitor.registerPlugin('Share'), app: Capacitor.registerPlugin('App'),
-} : null;
+const NAT = (() => { // plugin nativi; se qualcosa manca l'app parte lo stesso (senza archivio automatico)
+  try {
+    const C = window.Capacitor; if (!C || !C.isNativePlatform || !C.isNativePlatform()) return null;
+    const plug = n => (typeof C.registerPlugin === 'function' ? C.registerPlugin(n) : C.Plugins && C.Plugins[n]) || null; // registerPlugin arriva da lib/capacitor.js
+    const o = { fs: plug('Filesystem'), share: plug('Share'), app: plug('App') };
+    return o.fs ? o : null;
+  } catch (e) { console.error('plugin nativi', e); return null; }
+})();
 const NAT_DIR = 'DOCUMENTS', NAT_ROOT = 'SopraLux';
 const FirebaseAccount = { init() { }, html: () => '', wire() { } }; // la versione gratis non ha account
 
@@ -92,9 +97,9 @@ function pwaHomeBanners() {
 function pwaHomeWire() { const e = $('#pwRecover'); if (e) e.onclick = recoverFromFolder; }
 
 async function pwaBoot() {
-  await Archive.init();
+  try { await Archive.init(); } catch (e) { console.error('archivio', e); }
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella
-  if (NAT) {
+  if (NAT && NAT.app) {
     NAT.app.addListener('backButton', () => { // tasto Indietro di Android: chiude la finestra aperta, poi torna all'elenco, poi esce
       if (!$('#modal').classList.contains('hide')) closeModal();
       else if (S.sv) goHome();

@@ -12,6 +12,7 @@ echo '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="vie
 cat src/style.css
 echo '</style></head><body>'
 cat src/body.html
+echo '<script src="lib/capacitor.js"></script>'
 echo '<script>'
 echo "const PLATFORM = 'pwa'; const APP_VERSION = '$V';"
 cat src/00_legenda.js src/01_core.js src/02_geom.js src/03_plan.js src/03b_photoplan.js src/04_view.js src/05_panels.js src/05b_quadro.js src/05c_fam.js src/05d_vnote.js src/05e_check.js src/05f_close.js src/05g_compass.js src/06_ai.js src/07_export.js src/pwa.js src/native.js src/08_home.js
@@ -28,4 +29,8 @@ for L in pdf.min.js pdf.worker.min.js jszip.min.js dxf-parser.js; do
     cp "$REPO/lib/$L" "$OUT/lib/$L"
   fi
 done
+# runtime di Capacitor (registerPlugin): senza, i plugin nativi non si raggiungono
+CAPJS="$REPO/app/node_modules/@capacitor/core/dist/capacitor.js"
+if [ ! -f "$CAPJS" ]; then echo "Manca $CAPJS: prima eseguire npm ci nella cartella app" >&2; exit 1; fi
+cp "$CAPJS" "$OUT/lib/capacitor.js"
 echo "App $V -> $OUT"

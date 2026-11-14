@@ -23,13 +23,14 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      - name: Dipendenze
+        working-directory: app
+        run: npm ci --no-audit --no-fund
       - name: App (pagina unica)
         run: TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
       - name: Capacitor
         working-directory: app
-        run: |
-          npm ci --no-audit --no-fund
-          npx cap sync android
+        run: npx cap sync android
       - name: APK
         working-directory: app/android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
