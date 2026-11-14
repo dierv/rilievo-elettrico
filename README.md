@@ -90,3 +90,12 @@ La stessa app esiste anche dentro Claude: lì l'AI è compresa nell'abbonamento,
 `sorgenti/` contiene il codice condiviso dalle due versioni:
 - `sh build_pwa.sh ..` (lanciato da `sorgenti/`) rigenera l'app pubblicata qui;
 - `sh build.sh` crea la versione per Claude.
+
+## App per Android e iOS (SopraLux, versione gratis)
+
+- Cartella `app/`: progetto Capacitor che impacchetta la stessa app. Si costruisce con `sh sorgenti/build_app.sh ../app/www`, poi `cd app && npm ci && npx cap sync`.
+- Versione gratis: tutto resta sul dispositivo, niente account né sincronizzazione. Archivio automatico nella cartella **Documenti/SopraLux** (su iPad: app File → Sul mio iPad → SopraLux). I file esportati si salvano lì e si possono condividere.
+- `sorgenti/src/native.js` contiene le differenze rispetto alla PWA (archivio, salvataggio dei file, tasto Indietro di Android).
+- **APK di prova:** a ogni modifica GitHub lo costruisce (`.github/workflows/app-android.yml`) e lo mette nella release «app-prova» del repository. La chiave `app/android/app/prova.keystore` serve solo per le prove: la chiave per Google Play resterà fuori dal repository.
+- iOS: il progetto Xcode è in `app/ios`; si compila su un Mac con Xcode.
+

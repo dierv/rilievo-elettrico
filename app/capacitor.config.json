@@ -1,0 +1,17 @@
+{
+  "appId": "it.diervsoft.sopralux",
+  "appName": "SopraLux",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": false,
+    "webContentsDebuggingEnabled": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "SystemBars": { "insetsHandling": "native" }
+  }
+}

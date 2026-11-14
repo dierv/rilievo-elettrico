@@ -1,0 +1,21 @@
+{
+  "name": "sopralux-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SopraLux: app nativa Android e iOS (Capacitor) costruita dai sorgenti in ../sorgenti",
+  "scripts": {
+    "web": "cd ../sorgenti && sh build_app.sh ../app/www",
+    "sync": "npm run web && npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/ios": "^8.6.2",
+    "@capacitor/share": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

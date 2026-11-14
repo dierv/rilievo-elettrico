@@ -1,0 +1,48 @@
+# App Android di prova (SopraLux, versione gratis): a ogni modifica dei sorgenti costruisce l'APK
+# e lo mette nella release «app-prova» del repository, da scaricare e installare sul tablet.
+name: App Android di prova
+on:
+  push:
+    branches: [main]
+    paths: ['sorgenti/src/**', 'sorgenti/build_app.sh', 'app/**', 'lib/**', '.github/workflows/app-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: app-android
+  cancel-in-progress: true
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: App (pagina unica)
+        run: sh sorgenti/build_app.sh ../app/www
+      - name: Capacitor
+        working-directory: app
+        run: |
+          npm ci --no-audit --no-fund
+          npx cap sync android
+      - name: APK
+        working-directory: app/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Nome del file
+        run: cp app/android/app/build/outputs/apk/debug/app-debug.apk SopraLux-prova.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SopraLux-prova
+          path: SopraLux-prova.apk
+      - name: Release «app-prova»
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view app-prova >/dev/null 2>&1 || gh release create app-prova --prerelease --title "SopraLux – app Android di prova" --notes "APK di prova della versione gratis. Si aggiorna da solo a ogni modifica: scarica SopraLux-prova.apk e installalo sul tablet."
+          gh release upload app-prova SopraLux-prova.apk --clobber
+          gh release edit app-prova --notes "APK di prova della versione gratis, build n. ${{ github.run_number }} del $(TZ=Europe/Rome date '+%d/%m/%Y %H:%M'). Scarica SopraLux-prova.apk e installalo sul tablet (si installa sopra la versione precedente senza perdere i dati)."
