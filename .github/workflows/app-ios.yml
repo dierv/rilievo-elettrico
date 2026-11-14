@@ -70,7 +70,9 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC" > /dev/null
           security find-identity -v -p codesigning "$KC"
           U=$(cat "$S/profile_uuid")
-          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do mkdir -p "$d"; cp "$S/profile.mobileprovision" "$d/$U.mobileprovision"; done
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do mkdir -p "$d"; cp "$S/profile.mobileprovision" "$d/$U.mobileprovision"; ls -la "$d"; done
+          security cms -D -i "$S/profile.mobileprovision" > "$S/profile.plist"
+          for k in Name UUID TeamIdentifier:0 Entitlements:application-identifier ExpirationDate; do echo "$k = $(/usr/libexec/PlistBuddy -c "Print :$k" "$S/profile.plist")"; done
       - name: Archivio firmato
         if: steps.key.outputs.ok == 'true'
         run: |
@@ -92,7 +94,7 @@ jobs:
             <key>teamID</key><string>$TEAM_ID</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
-            <key>provisioningProfiles</key><dict><key>it.diervsoft.sopralux</key><string>$N</string></dict>
+            <key>provisioningProfiles</key><dict><key>it.diervsoft.sopralux</key><string>$(cat "$RUNNER_TEMP/sign/profile_uuid")</string></dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST

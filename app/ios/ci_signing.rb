@@ -69,12 +69,13 @@ when 'create'
 when 'project'
   pbx = ARGV[2] or abort 'manca project.pbxproj'
   name = File.read(File.join(dir, 'profile_name'))
+  uuid = File.read(File.join(dir, 'profile_uuid'))
   src = File.read(pbx)
   re = %r{(/\* Release \*/ = \{\s*isa = XCBuildConfiguration;\s*buildSettings = \{\s*ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;\s*)CODE_SIGN_STYLE = Automatic;}
-  out = src.sub(re) { "#{$1}CODE_SIGN_STYLE = Manual;\n\t\t\t\t\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";\n\t\t\t\tDEVELOPMENT_TEAM = #{ENV.fetch('TEAM_ID')};\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"#{name}\";" }
+  out = src.sub(re) { "#{$1}CODE_SIGN_STYLE = Manual;\n\t\t\t\t\"CODE_SIGN_IDENTITY[sdk=iphoneos*]\" = \"Apple Distribution\";\n\t\t\t\tDEVELOPMENT_TEAM = #{ENV.fetch('TEAM_ID')};\n\t\t\t\tPROVISIONING_PROFILE = \"#{uuid}\";\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"#{uuid}\";" }
   abort 'configurazione Release dell\'app non trovata nel progetto' if out == src
   File.write(pbx, out)
-  puts "Progetto: firma manuale con #{name}"
+  puts "Progetto: firma manuale con #{name} (#{uuid})"
 when 'cleanup'
   pid = File.read(File.join(dir, 'profile_id')) rescue nil
   cid = File.read(File.join(dir, 'cert_id')) rescue nil
