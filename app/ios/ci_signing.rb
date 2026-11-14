@@ -58,6 +58,15 @@ when 'create'
   puts "Certificato creato: #{cert['id']}"
   # identificativo dell'app e profilo App Store
   bid = call(:get, "/v1/bundleIds?filter[identifier]=#{BUNDLE_ID}")['data'].find { |b| b['attributes']['identifier'] == BUNDLE_ID } or abort "Identificativo #{BUNDLE_ID} non trovato"
+  # Accedi con Apple: la capability deve essere attiva sull'identificativo prima di creare il profilo
+  caps = call(:get, "/v1/bundleIds/#{bid['id']}/bundleIdCapabilities")['data'].map { |c| c['attributes']['capabilityType'] }
+  unless caps.include?('APPLE_ID_AUTH')
+    call(:post, '/v1/bundleIdCapabilities', { data: { type: 'bundleIdCapabilities', attributes: { capabilityType: 'APPLE_ID_AUTH',
+      settings: [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }] },
+      relationships: { bundleId: { data: { type: 'bundleIds', id: bid['id'] } } } } })
+    puts 'Capability «Accedi con Apple» attivata sull\'identificativo'
+  end
+  puts "Capability: #{caps.join(', ')}"
   name = "SopraLux CI #{Time.now.utc.strftime('%Y%m%d%H%M%S')}"
   prof = call(:post, '/v1/profiles', { data: { type: 'profiles', attributes: { name: name, profileType: 'IOS_APP_STORE' },
     relationships: { bundleId: { data: { type: 'bundleIds', id: bid['id'] } }, certificates: { data: [{ type: 'certificates', id: cert['id'] }] } } } })['data']
