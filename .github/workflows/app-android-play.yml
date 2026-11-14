@@ -44,7 +44,7 @@ jobs:
           else
             openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in app/android/upload.p12.enc -out "$K" -pass env:PW
           fi
-          keytool -list -v -keystore "$K" -storetype PKCS12 -storepass:env PW | grep -E "SHA256|Valido|Valid" || true
+          keytool -list -v -keystore "$K" -storetype PKCS12 -storepass:env PW | grep -E "SHA1|SHA256|Valido|Valid" || true  # impronte pubbliche: servono in Firebase per l'accesso Google
           echo "PLAY_KEYSTORE=$K" >> "$GITHUB_ENV"
       - name: Dipendenze
         working-directory: app
