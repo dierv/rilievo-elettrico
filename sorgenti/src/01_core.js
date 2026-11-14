@@ -211,8 +211,8 @@ const DXF_BG = { w: ['Bianco', '#ffffff'], g: ['Grigio', '#2f353d'], k: ['Nero',
 const dxfBg = () => DXF_BG[UIP.get('dxfBg', 'w')] ? UIP.get('dxfBg', 'w') : 'w';
 function isDark() { const t = UIP.get('theme', 'light'); return t === 'dark' || (t === 'auto' && !!(THEME_MQ && THEME_MQ.matches)); }
 function applyTheme() {
-  const d = isDark(); document.documentElement.classList.toggle('dark', d);
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#171a20' : '#1d4ed8';
+  const d = isDark(), root = document.documentElement; if (root && root.classList) root.classList.toggle('dark', d);
+  const m = document.querySelector && document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#171a20' : '#1d4ed8';
   if (typeof natTheme === 'function') natTheme(d);
   if (typeof redraw === 'function' && S.sv) redraw();
 }

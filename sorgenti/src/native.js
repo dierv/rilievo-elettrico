@@ -1,5 +1,6 @@
-/* ============ APP NATIVA SopraLux (Capacitor, Android e iOS) – versione gratis ============
-   Tutto resta sul dispositivo: niente account, niente sincronizzazione, niente service worker.
+/* ============ APP NATIVA SopraLux (Capacitor, Android e iOS) ============
+   I sopralluoghi restano sul dispositivo: niente sincronizzazione e niente service worker.
+   Account (Apple o Google) da pwa_firebase.js, solo se nell'app c'è il plugin FirebaseAuthentication.
    Archivio automatico nella cartella Documenti/SopraLux (Android: app File → Documenti; iPad: app File → Sul mio iPad → SopraLux).
    Questo file si carica solo nella build dell'app (build_app.sh), dopo pwa.js: le funzioni con lo stesso nome sostituiscono quelle della PWA. */
 const NAT = (() => { // plugin nativi; se qualcosa manca l'app parte lo stesso (senza archivio automatico)
@@ -11,7 +12,6 @@ const NAT = (() => { // plugin nativi; se qualcosa manca l'app parte lo stesso (
   } catch (e) { console.error('plugin nativi', e); return null; }
 })();
 const NAT_DIR = 'DOCUMENTS', NAT_ROOT = 'SopraLux';
-const FirebaseAccount = { init() { }, html: () => '', wire() { } }; // la versione gratis non ha account
 
 /* cartella del dispositivo vista come una cartella del browser (stesse funzioni usate dall'archivio della PWA) */
 const natPath = (...p) => p.filter(Boolean).join('/');
@@ -93,21 +93,21 @@ function pickFile(accept) { // come in 03_plan.js, con il filtro adattato ad And
 }
 function natFixInputs() { document.querySelectorAll('input[type=file]').forEach(i => { const a = natAccept(i.accept); if (a !== i.accept) i.accept = a; }); }
 
-/* home: niente installazione né account; l'archivio c'è sempre */
+/* home: niente installazione; account (se c'è il plugin) e archivio, che c'è sempre */
 function pwaHomeBanners() {
-  const b = [`<div class="banner">📁 Archivio automatico: <b>${esc(natWhere())}</b>${Archive.err ? ' <span style="color:var(--bad)">– errore: ' + esc(Archive.err) + '</span>' : ' ✓'} <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`];
+  const b = [FirebaseAccount.html(), `<div class="banner">📁 Archivio automatico: <b>${esc(natWhere())}</b>${Archive.err ? ' <span style="color:var(--bad)">– errore: ' + esc(Archive.err) + '</span>' : ' ✓'} <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`];
   if (!CAP.sample) b.push(aiAvailHtml());
   const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7); if (sp[m]) b.push(`<div class="mut small">✦ Spesa AI di questo mese su questo dispositivo: ${fmtUsd(sp[m])}</div>`);
   if (appVersionText()) b.push(`<div class="mut small" id="appVer">Versione dell'app: ${appVersionText()}</div>`);
   return b;
 }
-function pwaHomeWire() { const e = $('#pwRecover'); if (e) e.onclick = recoverFromFolder; }
+function pwaHomeWire() { FirebaseAccount.wire(); const e = $('#pwRecover'); if (e) e.onclick = recoverFromFolder; }
 
 function natTheme(dark) { // barra dell'ora e della batteria: scritte chiare sul tema scuro, scure sul chiaro
   try { if (NAT && NAT.bars) Promise.resolve(NAT.bars.setStyle({ style: dark ? 'DARK' : 'LIGHT' })).catch(() => { }); } catch (e) { }
 }
 async function pwaBoot() {
-  natFixInputs(); natTheme(isDark());
+  natFixInputs(); natTheme(isDark()); FirebaseAccount.init();
   try { await Archive.init(); } catch (e) { console.error('archivio', e); }
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella
   if (NAT && NAT.app) {

@@ -1,0 +1,11 @@
+{
+  "name": "sopralux-functions",
+  "private": true,
+  "description": "Funzioni server di SopraLux: pulizia dei dati quando un account viene eliminato",
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "14.5.1",
+    "firebase-functions": "7.4.0"
+  }
+}

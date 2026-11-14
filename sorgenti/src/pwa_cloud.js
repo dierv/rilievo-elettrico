@@ -458,7 +458,8 @@ const PwaCloud = {
     try {
       // The old database stays selected until reload. Late async callbacks can
       // never write into another user's database.
-      while (this.activities || Archive.busy || Rec.active || Sync.paused) {
+      // FirebaseAccount.busy: l'accesso può ancora collegare un secondo metodo (Apple/Google) allo stesso account.
+      while (this.activities || Archive.busy || Rec.active || Sync.paused || FirebaseAccount.busy) {
         if (Rec.active && Rec.mr?.state !== 'inactive') Rec.stop();
         await sleep(100);
       }
@@ -493,12 +494,11 @@ Object.assign(PwaCloud, {
   },
   accountHtml() {
     const account = FirebaseAccount, signed = !!account.user;
-    const label = signed ? account.user.email || account.user.displayName || 'Account Google' : 'Account Google';
+    const label = account.label();
     const status = this.describe(); const disabled = account.busy || this.switching;
-    const button = signed
-      ? `<button class="sm" id="fbSignOut"${disabled ? ' disabled' : ''}>${account.busy === 'signout' ? 'Uscita…' : 'Esci'}</button>`
-      : account.auth ? `<button class="sm pri" id="fbSignIn"${!account.ready || disabled ? ' disabled' : ''}>${account.busy === 'signin' ? 'Accesso…' : account.ready ? 'Accedi con Google' : 'Preparazione accesso…'}</button>` : '';
-    return `<div class="row wrap" style="gap:10px"><b style="flex:1;overflow-wrap:anywhere">${esc(label)}</b>${button}</div>
+    // Accesso con Apple o Google e scheda Account: pwa_firebase.js
+    const button = account.buttonsHtml(!!disabled);
+    return `<div class="row wrap" style="gap:10px"><b style="flex:1;min-width:160px;overflow-wrap:anywhere">${esc(label)}</b><div class="row wrap authbs">${button}</div></div>
       <div class="small" role="status" style="margin-top:8px"><span class="chip ${status.style}">${esc(status.text)}</span></div>
       ${signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
       ${this.migrationNotice ? `<div class="small mut" style="margin-top:6px">${esc(this.migrationNotice)}</div>` : ''}
@@ -506,8 +506,7 @@ Object.assign(PwaCloud, {
   },
   wireAccount() {
     const bind = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
-    bind('fbSignIn', () => FirebaseAccount.signIn());
-    bind('fbSignOut', () => FirebaseAccount.signOut());
+    FirebaseAccount.wireButtons();
     bind('fbSyncNow', () => this.syncNow().catch(error => { this.error = this.message(error); this.refresh(); }));
     bind('fbConflicts', () => this.showConflicts());
   },
@@ -735,14 +734,15 @@ Object.assign(PwaCloud, {
       this.activities++;
       try { return await originalArchiveAll(); } finally { this.activities--; }
     };
-    const signIn = FirebaseAccount.signIn, signOut = FirebaseAccount.signOut;
+    const signIn = FirebaseAccount.signIn, signOut = FirebaseAccount.signOut, deleteAccount = FirebaseAccount.deleteAccount;
     const mayChange = () => {
       if (this.switching || this.activities || Rec.active || Sync.paused || Archive.busy) { toast('Attendi la fine dell’operazione in corso prima di cambiare account.', true, 6000); return false; }
       if (this.localError || Sync.err) { toast('Prima di cambiare account, completa il salvataggio sul dispositivo.', true, 6000); return false; }
       return true;
     };
-    FirebaseAccount.signIn = function () { if (mayChange()) return signIn.call(this); };
-    FirebaseAccount.signOut = function () { if (mayChange()) return signOut.call(this); };
+    FirebaseAccount.signIn = function (...args) { if (mayChange()) return signIn.apply(this, args); };
+    FirebaseAccount.signOut = function (...args) { if (mayChange()) return signOut.apply(this, args); };
+    if (deleteAccount) FirebaseAccount.deleteAccount = function (...args) { if (mayChange()) return deleteAccount.apply(this, args); };
     FirebaseAccount.contentHtml = () => this.accountHtml();
     FirebaseAccount.wire = () => this.wireAccount();
     pwaBadge = button => {

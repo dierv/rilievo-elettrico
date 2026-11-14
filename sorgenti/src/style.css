@@ -229,3 +229,14 @@ details.setai>summary{cursor:pointer;font-weight:700;padding:10px 0 6px;list-sty
 .dark #toast{background:#2a2f38;border:1px solid #3a414c}
 .dark #hint{background:rgba(0,0,0,.82)}
 .dark .thumbs img{background:#262b33}
+/* account: pulsanti di accesso (Apple nero, Google bianco, come chiedono le loro linee guida) e scheda Account */
+.authbs{gap:8px}
+button.authb{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+button.authb.apple{background:#000;border-color:#000;color:#fff}
+button.authb.google{background:#fff;border-color:#747775;color:#1f1f1f}
+:root.dark button.authb.apple{border-color:#8a929c}
+.acrow{gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.aci{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;flex:none}
+.aci.apple{background:#000;color:#fff}
+.aci.google{background:#fff;border:1px solid var(--line)}
+.acrow>button{flex:none}
