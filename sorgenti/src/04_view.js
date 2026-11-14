@@ -662,8 +662,15 @@ function roomHit(P, sx, sy) { // la stanza si prende dal bordo o dal nome, non d
 }
 function select(t, id) { S.sel = t ? { t, id } : null; renderPanel(); redraw(); }
 
+function darkPlanText(x) { // DXF su fondo scuro: le scritte sulla pianta hanno l'alone scuro e i colori schiariti (solo sullo schermo)
+  const hex = s => { s = String(s); if (/^#[0-9a-f]{3}$/i.test(s)) s = '#' + [...s.slice(1)].map(c => c + c).join(''); return /^#[0-9a-f]{6}$/i.test(s) ? [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)) : null; };
+  const light = s => { const c = hex(s); if (!c) return s; const L = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255; return L > 0.5 ? s : 'rgb(' + c.map(v => Math.round(v + (255 - v) * 0.6)).join(',') + ')'; };
+  const st0 = x.strokeText, ft0 = x.fillText;
+  x.strokeText = function (...a) { if (!S.planDark) return st0.apply(this, a); const s = this.strokeStyle; if (/^#fff|^#ffffff|255, ?255, ?255/i.test(String(s))) this.strokeStyle = 'rgba(13,15,19,.9)'; st0.apply(this, a); this.strokeStyle = s; };
+  x.fillText = function (...a) { if (!S.planDark) return ft0.apply(this, a); const f = this.fillStyle; this.fillStyle = light(f); ft0.apply(this, a); this.fillStyle = f; };
+}
 function initCanvas() {
-  const c = $('#cv');
+  const c = $('#cv'); darkPlanText(c.getContext('2d'));
   new ResizeObserver(() => redraw()).observe(c);
   const pos = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   c.addEventListener('pointerdown', e => {
