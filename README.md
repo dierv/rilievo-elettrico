@@ -97,5 +97,5 @@ La stessa app esiste anche dentro Claude: lì l'AI è compresa nell'abbonamento,
 - Versione gratis: tutto resta sul dispositivo, niente account né sincronizzazione. Archivio automatico nella cartella **Documenti/SopraLux** (su iPad: app File → Sul mio iPad → SopraLux). I file esportati si salvano lì e si possono condividere.
 - `sorgenti/src/native.js` contiene le differenze rispetto alla PWA (archivio, salvataggio dei file, tasto Indietro di Android).
 - **APK di prova:** a ogni modifica GitHub lo costruisce (`.github/workflows/app-android.yml`) e lo mette nella release «app-prova» del repository. La chiave `app/android/app/prova.keystore` serve solo per le prove: la chiave per Google Play resterà fuori dal repository.
-- iOS: il progetto Xcode è in `app/ios`; si compila su un Mac con Xcode.
+- **App iOS di prova su TestFlight:** a ogni modifica GitHub costruisce l'app su un Mac (`.github/workflows/app-ios.yml`) e la carica su TestFlight; i tester del gruppo «Interno» la ricevono da soli. La firma usa un certificato e un profilo temporanei creati con la chiave API di App Store Connect e revocati a fine build (`app/ios/ci_signing.rb`). Secret del repository: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`. Team Apple `4T9977N43U`, app `it.diervsoft.sopralux`.
 
