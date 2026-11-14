@@ -86,6 +86,13 @@ if (NAT) LocalDL.save = async function ({ filename, data }) {
   });
 };
 
+/* scelta dei file: Android non conosce l'estensione .dxf e la lascia grigia; per piante e DXF si mostrano tutti i file (il tipo lo controlla l'app) */
+const natAccept = a => NAT && /\.(dxf|dwg)\b/i.test(a || '') ? '*/*' : a;
+function pickFile(accept) { // come in 03_plan.js, con il filtro adattato ad Android
+  return new Promise(res => { const i = document.createElement('input'); i.type = 'file'; i.accept = natAccept(accept); i.style.display = 'none'; document.body.appendChild(i); i.onchange = () => { res(i.files && i.files[0] || null); i.remove(); }; i.click(); });
+}
+function natFixInputs() { document.querySelectorAll('input[type=file]').forEach(i => { const a = natAccept(i.accept); if (a !== i.accept) i.accept = a; }); }
+
 /* home: niente installazione né account; l'archivio c'è sempre */
 function pwaHomeBanners() {
   const b = [`<div class="banner">📁 Archivio automatico: <b>${esc(natWhere())}</b>${Archive.err ? ' <span style="color:var(--bad)">– errore: ' + esc(Archive.err) + '</span>' : ' ✓'} <button class="sm" id="pwRecover">Recupera dalla cartella</button></div>`];
@@ -97,6 +104,7 @@ function pwaHomeBanners() {
 function pwaHomeWire() { const e = $('#pwRecover'); if (e) e.onclick = recoverFromFolder; }
 
 async function pwaBoot() {
+  natFixInputs();
   try { await Archive.init(); } catch (e) { console.error('archivio', e); }
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella
   if (NAT && NAT.app) {
