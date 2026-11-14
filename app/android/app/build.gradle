@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // numero di versione dalla build su GitHub (ogni APK di prova è più nuovo del precedente)
         versionCode = Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")
-        versionName = "0.1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        versionName = System.getenv("APP_VERSION_NAME") ?: ("0.1." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0"))
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -26,12 +26,23 @@ android {
             keyAlias "prova"
             keyPassword "sopralux-prova"
         }
+        // chiave di caricamento per Google Play: esiste solo durante la build su GitHub (vedi .github/workflows/app-android-play.yml)
+        if (System.getenv("PLAY_KEYSTORE")) {
+            play {
+                storeFile file(System.getenv("PLAY_KEYSTORE"))
+                storeType "pkcs12"
+                storePassword System.getenv("PLAY_KEY_PASSWORD")
+                keyAlias "upload"
+                keyPassword System.getenv("PLAY_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.prova
         }
         release {
+            if (System.getenv("PLAY_KEYSTORE")) signingConfig signingConfigs.play
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

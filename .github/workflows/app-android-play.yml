@@ -1,0 +1,71 @@
+# App Android per Google Play (SopraLux): costruisce il pacchetto AAB firmato con la chiave di caricamento.
+# La chiave di caricamento la crea questa build la prima volta e la salva nel repository solo cifrata
+# (app/android/upload.p12.enc, AES-256 con la password del secret ANDROID_UPLOAD_PASSWORD): senza la password è inutilizzabile.
+# Google Play firma poi l'app con la sua chiave (Firma dell'app di Play): se la chiave di caricamento si perde, si reimposta dalla Play Console.
+name: App Android per Google Play
+on:
+  workflow_dispatch: # si avvia a mano (Actions → App Android per Google Play → Run workflow) quando serve una nuova versione per lo store
+permissions:
+  contents: write
+concurrency:
+  group: app-android-play
+  cancel-in-progress: true
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Password della chiave
+        env:
+          PW: ${{ secrets.ANDROID_UPLOAD_PASSWORD }}
+        run: |
+          if [ -z "$PW" ]; then echo "::error::Manca il secret ANDROID_UPLOAD_PASSWORD (Settings → Secrets and variables → Actions)"; exit 1; fi
+          if [ ${#PW} -lt 20 ]; then echo "::error::La password ANDROID_UPLOAD_PASSWORD deve avere almeno 20 caratteri"; exit 1; fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Chiave di caricamento (creata la prima volta, poi decifrata)
+        env:
+          PW: ${{ secrets.ANDROID_UPLOAD_PASSWORD }}
+        run: |
+          K="$RUNNER_TEMP/upload.p12"
+          if [ ! -f app/android/upload.p12.enc ]; then
+            keytool -genkeypair -keystore "$K" -storetype PKCS12 -alias upload -keyalg RSA -keysize 4096 -validity 36500 \
+              -dname "CN=Davide Iervolino, O=Diervsoft, L=Travagliato, C=IT" -storepass:env PW -keypass:env PW
+            openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "$K" -out app/android/upload.p12.enc -pass env:PW
+            git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/android/upload.p12.enc
+            git commit -m "Chiave di caricamento Google Play (solo cifrata)"
+            git push
+          else
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in app/android/upload.p12.enc -out "$K" -pass env:PW
+          fi
+          keytool -list -v -keystore "$K" -storetype PKCS12 -storepass:env PW | grep -E "SHA256|Valido|Valid" || true
+          echo "PLAY_KEYSTORE=$K" >> "$GITHUB_ENV"
+      - name: Dipendenze
+        working-directory: app
+        run: npm ci --no-audit --no-fund
+      - name: App (pagina unica)
+        run: TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
+      - name: Capacitor
+        working-directory: app
+        run: npx cap sync android
+      - name: AAB
+        working-directory: app/android
+        env:
+          PLAY_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_PASSWORD }}
+          APP_VERSION_NAME: '1.0'
+        run: ./gradlew bundleRelease --no-daemon --stacktrace
+      - name: Nome del file
+        run: cp app/android/app/build/outputs/bundle/release/app-release.aab SopraLux-play-${{ github.run_number }}.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SopraLux-play-${{ github.run_number }}
+          path: SopraLux-play-${{ github.run_number }}.aab
+      - name: Pulizia
+        if: always()
+        run: rm -f "$RUNNER_TEMP/upload.p12"
