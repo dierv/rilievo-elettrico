@@ -1,6 +1,6 @@
 # Account SopraLux: accesso con Apple o Google
 
-Aggiornato il 14/11/2026.
+Aggiornato il 15/11/2026.
 
 ## Come funziona
 
@@ -8,49 +8,48 @@ Aggiornato il 14/11/2026.
 - **Stessa email già registrata con l'altro metodo** (impostazione Firebase «collega gli account con lo stesso indirizzo email»): l'app spiega di entrare con il metodo già usato e, appena l'utente entra, collega da sola il nuovo metodo.
 - **Email nascosta di Apple** (`…@privaterelay.appleid.com`): l'email non coincide, quindi si collega a mano dalla scheda Account (per esempio sull'iPad: entra con Apple → Account → Collega Google; poi su Android entra con Google).
 - **Browser (PWA):** popup di Firebase.
-- **App nativa:** plugin `@capacitor-firebase/authentication`. Mostra le schermate di sistema e passa le credenziali all'SDK JavaScript (`skipNativeAuth: true`), così nell'app c'è un solo account.
+- **App nativa:** plugin `@capacitor-firebase/authentication` 8.6.0. Mostra le schermate di sistema e passa le credenziali all'SDK JavaScript (`skipNativeAuth: true`), così nell'app c'è un solo account.
 - **Su Android**, Apple funziona solo per entrare: il suo flusso apre già una sessione nativa, quindi non si può collegare a un account aperto. Su Android si collega Google; Apple si collega dall'iPad o dal browser.
 - **Eliminazione dell'account** (Apple 5.1.1(v)):
   - si conferma l'accesso;
   - con Apple si revoca anche l'autorizzazione (sull'iPad e nel browser);
   - si elimina l'utente;
-  - i dati online li cancella la funzione `eliminaDatiAccount` sul server.
+  - la funzione `eliminaDatiAccount` sul server cancella `users/{uid}` in Firestore e i file `users/{uid}/` in Storage.
 
 Codice: `sorgenti/src/pwa_firebase.js` (account e scheda Account); `pwa_cloud.js` usa gli stessi pulsanti e aspetta la fine del collegamento prima di ricaricare. Prova: `test/t44.py` nella cartella di lavoro (SDK e plugin finti).
 
+## Stato della configurazione (15/11/2026)
+
+| Cosa | Stato |
+|---|---|
+| Firebase: app Android `it.diervsoft.sopralux` | Registrata. Impronte SHA-1: chiave di prova `70:06:F2:…:FD:0C` e chiave di caricamento `22:99:27:…:17:5D` |
+| Firebase: app iOS `it.diervsoft.sopralux` (App Store 6834807545) | Registrata |
+| File di configurazione | `app/android/app/google-services.json`, `app/ios/App/App/GoogleService-Info.plist` (identificativi pubblici, non segreti) |
+| Firebase Authentication | Google e Apple attivi; «collega gli account con lo stesso indirizzo email» |
+| Apple: capability «Accedi con Apple» | La attiva la build iOS stessa (`app/ios/ci_signing.rb`, API App Store Connect) |
+| App: plugin, diritto Apple, schema URL Google | Fatto (`capacitor.config.json`, `App.entitlements`, `Info.plist`, `variables.gradle`) |
+| Funzione `eliminaDatiAccount` | **Pubblicata** (europe-west1, 1ª generazione). Provata dal vivo con `firebase/functions/prove/eliminazione.js` |
+
 ## Interruttori in `sorgenti/src/pwa.js`
 
-| Costante | Ora | Quando diventa `true` |
+| Costante | Valore | Significato |
 |---|---|---|
-| `FIREBASE_APPLE_WEB` | `false` | Quando in Firebase c'è il Services ID di Apple (Apple nel browser e su Android) |
-| `FIREBASE_DELETE_READY` | `false` | Quando la funzione `eliminaDatiAccount` è pubblicata: compare «Elimina account» |
+| `FIREBASE_APPLE_WEB` | `false` | Diventa `true` quando in Firebase c'è il Services ID di Apple: Apple anche nel browser e su Android |
+| `FIREBASE_DELETE_READY` | `true` | «Elimina account» visibile: la pulizia sul server c'è |
 
-## Cosa è già attivo
+## Da fare
 
-- **PWA:** accesso Google come prima, più la scheda Account (collega o scollega i metodi).
-- **App nativa:** il codice dell'account c'è, ma resta nascosto finché nell'app non c'è il plugin. Le build di prova non cambiano e non fanno richieste a Firebase.
+1. **Impronta della chiave di firma di Google Play.** Dopo il primo caricamento dell'AAB: Play Console → Integrità dell'app → Firma dell'app → SHA-1. Va aggiunta all'app Android in Firebase, altrimenti l'accesso Google non funziona nell'app scaricata da Play.
+2. **(Facoltativo) Apple nel browser e su Android:** serve un Services ID con dominio `sopralux-64b29.firebaseapp.com` e indirizzo di ritorno `https://sopralux-64b29.firebaseapp.com/__/auth/handler`. Serve anche una chiave «Sign in with Apple» (.p8): la crea il titolare dell'account e la incolla in Firebase con Team ID e Key ID. Poi `FIREBASE_APPLE_WEB = true`.
 
-## Configurazione che manca (in ordine)
+## Pubblicare le funzioni
 
-1. **Firebase → Impostazioni progetto → Aggiungi app Android** `it.diervsoft.sopralux`. Impronte SHA-1 da inserire:
-   - chiave di prova (APK di prova): `70:06:F2:83:7F:83:3D:BE:5B:8B:6D:CA:44:F2:47:DC:D9:F1:FD:0C`;
-   - chiave di caricamento per Play: si legge dopo la prima build `app-android-play.yml`;
-   - chiave di firma di Google Play: Play Console → Integrità dell'app → Firma dell'app, dopo il primo caricamento.
+Dalla Cloud Shell del progetto (shell.cloud.google.com, già autenticata come titolare):
 
-   Scaricare `google-services.json` in `app/android/app/`.
-2. **Firebase → Aggiungi app iOS** `it.diervsoft.sopralux` (Team `4T9977N43U`). Scaricare `GoogleService-Info.plist` in `app/ios/App/App/` e aggiungerlo al target App.
-3. **Apple Developer → Identifiers → `it.diervsoft.sopralux`:** attivare la capability **Sign in with Apple**. I profili creati dalla build GitHub la includono da soli.
-4. **Firebase Authentication → Metodo di accesso → Apple:** abilitarlo. Basta per l'iPad. Per il browser e Android servono anche:
-   - un **Services ID** con dominio `sopralux-64b29.firebaseapp.com` e indirizzo di ritorno `https://sopralux-64b29.firebaseapp.com/__/auth/handler`;
-   - una **chiave Sign in with Apple** (.p8). La crea e la incolla in Firebase il titolare dell'account, non va nel repo. Vanno inseriti anche Team ID e Key ID.
+```
+cd ~/rilievo-elettrico && git pull -q
+(cd firebase/functions && npm install --no-audit --no-fund --silent)
+npx -y firebase-tools@14 deploy --only functions --project sopralux-64b29 --non-interactive --force
+```
 
-   Poi `FIREBASE_APPLE_WEB = true`.
-5. **App:**
-   - `npm i @capacitor-firebase/authentication@8.6.0` nella cartella `app`;
-   - in `capacitor.config.json`: `"FirebaseAuthentication": { "skipNativeAuth": true, "providers": ["apple.com", "google.com"] }`;
-   - in `android/variables.gradle`: `rgcfaIncludeGoogle = true` e `androidxCredentialsVersion = '1.3.0'`;
-   - iOS: URL scheme con il `REVERSED_CLIENT_ID` del plist e diritto `com.apple.developer.applesignin` (file `App.entitlements`);
-   - infine `npx cap sync`.
-6. **Funzione di pulizia:** `firebase deploy --only functions` dalla cartella principale del repo (codice in `firebase/functions`). Poi `FIREBASE_DELETE_READY = true`.
-
-Senza i passi 1–2 il plugin farebbe chiudere l'app all'avvio: per questo il passo 5 viene dopo.
+La prima pubblicazione ha attivato le API Cloud Functions, Cloud Build e Artifact Registry. Le immagini più vecchie di 1 giorno si cancellano da sole (regola di pulizia di Artifact Registry). La funzione gira con l'account di servizio predefinito di App Engine (ruolo Editor).

@@ -14,7 +14,7 @@ const FIREBASE_CONFIG = Object.freeze({
 // Apple nel browser e su Android: diventa true quando in Firebase c'è il Services ID di Apple (sull'iPad funziona sempre).
 const FIREBASE_APPLE_WEB = false;
 // «Elimina account» compare quando sul server c'è la funzione che cancella i dati dell'account (sorgenti/firebase/functions).
-const FIREBASE_DELETE_READY = false;
+const FIREBASE_DELETE_READY = true;
 const KV = {
   get(k, d = null) { try { const v = localStorage.getItem('ril_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { if (v == null) localStorage.removeItem('ril_' + k); else localStorage.setItem('ril_' + k, JSON.stringify(v)); } catch (e) { } },
