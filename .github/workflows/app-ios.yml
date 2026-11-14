@@ -58,6 +58,25 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ github.run_number }} MARKETING_VERSION=0.1 | tail -n 80
           # l'archivio si crea senza firma: la firma per l'App Store la fa l'esportazione, con il certificato gestito da Apple
           test -d "$RUNNER_TEMP/App.xcarchive"
+      - name: Verifica della chiave (senza mostrarla)
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          f=~/private_keys/AuthKey_$KEY_ID.p8
+          echo "righe: $(wc -l < "$f"), prima riga: $(head -1 "$f"), ultima: $(grep -v '^\s*$' "$f" | tail -1)"
+          openssl pkey -in "$f" -noout && echo "chiave privata leggibile"
+          ruby -ropenssl -rjson -rbase64 -rnet/http -e '
+            key = OpenSSL::PKey::EC.new(File.read(File.expand_path("~/private_keys/AuthKey_#{ENV["KEY_ID"]}.p8")))
+            b64 = ->(s){ Base64.urlsafe_encode64(s, padding: false) }
+            h = b64.(JSON.dump({alg: "ES256", kid: ENV["KEY_ID"], typ: "JWT"}))
+            now = Time.now.to_i
+            p = b64.(JSON.dump({iss: ENV["ISSUER_ID"], iat: now, exp: now + 600, aud: "appstoreconnect-v1"}))
+            der = key.sign(OpenSSL::Digest::SHA256.new, "#{h}.#{p}")
+            asn = OpenSSL::ASN1.decode(der); r = asn.value[0].value.to_s(2).rjust(32, "\0"); s = asn.value[1].value.to_s(2).rjust(32, "\0")
+            jwt = "#{h}.#{p}.#{b64.(r + s)}"
+            uri = URI("https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=it.diervsoft.sopralux")
+            req = Net::HTTP::Get.new(uri); req["Authorization"] = "Bearer #{jwt}"
+            res = Net::HTTP.start(uri.host, uri.port, use_ssl: true) { |http| http.request(req) }
+            puts "API App Store Connect: HTTP #{res.code}"; puts res.body[0, 400]'
       - name: Invio a TestFlight
         if: steps.key.outputs.ok == 'true'
         run: |
@@ -75,4 +94,7 @@ jobs:
           PLIST
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
             -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates -authenticationKeyPath ~/private_keys/AuthKey_$KEY_ID.p8 \
-            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID"
+            -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" || {
+            for d in $(find "${TMPDIR:-/tmp}" -maxdepth 2 -name '*.xcdistributionlogs' 2>/dev/null); do
+              for f in "$d"/IDEDistribution.standard.log "$d"/IDEDistribution.critical.log; do [ -f "$f" ] && { echo "== $f"; grep -iv "authorization\|bearer" "$f" | tail -n 60; }; done
+            done; exit 1; }
