@@ -287,7 +287,7 @@ function writeLegGeom(E, owner, L) { // geometria del blocco della legenda (metr
 
 /* ---- PNG annotato ---- */
 async function annotatedPng(P, pnum) {
-  const im = await loadPlanImage(P.id); const allIts = S.items.filter(i => i.planId === P.id); const its = allIts.filter(i => !i.hint);
+  const im = await loadPlanImage(P.id, false, true); const allIts = S.items.filter(i => i.planId === P.id); const its = allIts.filter(i => !i.hint);
   const LW = Math.round(Math.max(520, P.w * 0.22)); const c = newCanvas(P.w + LW, P.h); const x = c.getContext('2d'); x.drawImage(im.canvas, 0, 0);
   const k = ppm(P); const R = Math.max(10, 0.18 * k); const fs = Math.max(12, 0.22 * k);
   for (const r of S.rooms.filter(r => r.planId === P.id)) {

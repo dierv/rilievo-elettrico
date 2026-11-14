@@ -201,6 +201,22 @@ const S = {
   sel: null, tool: 'sel', symSel: null, view: { s: 1, tx: 0, ty: 0, r: 0 }, planImg: {}, undo: [],
 };
 const ST = () => S.lib.settings;
+const UIP = { // preferenze di questo dispositivo (pannello, tema): non vanno nel sopralluogo né nella libreria
+  get(k, d = null) { try { const v = localStorage.getItem('ril_ui_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('ril_ui_' + k, JSON.stringify(v)); } catch (e) { } },
+};
+/* tema: chiaro di serie (si legge al sole), scuro, oppure come il tablet; sfondo delle tavole DXF: bianco, grigio o nero */
+const THEME_MQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+const DXF_BG = { w: ['Bianco', '#ffffff'], g: ['Grigio', '#2f353d'], k: ['Nero', '#000000'] };
+const dxfBg = () => DXF_BG[UIP.get('dxfBg', 'w')] ? UIP.get('dxfBg', 'w') : 'w';
+function isDark() { const t = UIP.get('theme', 'light'); return t === 'dark' || (t === 'auto' && !!(THEME_MQ && THEME_MQ.matches)); }
+function applyTheme() {
+  const d = isDark(); document.documentElement.classList.toggle('dark', d);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#171a20' : '#1d4ed8';
+  if (typeof natTheme === 'function') natTheme(d);
+  if (typeof redraw === 'function' && S.sv) redraw();
+}
+applyTheme(); if (THEME_MQ && THEME_MQ.addEventListener) THEME_MQ.addEventListener('change', applyTheme);
 let _symArr = null, _symLen = 0, _symMap = null;
 function symsChanged() { _symArr = null; }
 const symOf = code => {
@@ -310,6 +326,34 @@ const Sync = {
 };
 function syncBadge() {
   const b = $('#syncB'); if (!b) return;
+  b.onclick = null; syncBadge0(b); statIcons(b);
+}
+/* stato del salvataggio come icone colorate (disco o nuvola + cartella dell'archivio); il testo resta per lo screen reader e si legge toccando */
+const ICO = {
+  save: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 3h11l4 4v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M8 3v5h7V3"/><rect x="7" y="13" width="10" height="7" rx="1"/></svg>',
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 19h10a4.5 4.5 0 0 0 .6-8.96A6.5 6.5 0 0 0 5.2 9.6 4.75 4.75 0 0 0 7 19z"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2.2h8.4A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></svg>',
+};
+function statIcons(b) {
+  const txt = b.textContent.trim(), m = /\b(ok|grey|warn|bad)\b/.exec(b.className), st = m ? m[1] : 'grey', act = b.onclick;
+  const cloud = /Sincroniz|Offline|da decidere|Accedi/.test(txt), busy = /…/.test(txt);
+  let fold = '', ftxt = '', fs = '';
+  if (PLATFORM === 'pwa' && typeof Archive !== 'undefined' && Archive.ok()) {
+    fs = Archive.err ? 'bad' : Archive.root && Archive.ready() ? 'ok' : Archive.root ? 'warn' : 'off';
+    const nm = typeof natWhere === 'function' ? natWhere() : Archive.root ? 'cartella "' + Archive.root.name + '"' : '';
+    ftxt = fs === 'ok' ? 'Copia nell\'archivio: ' + nm + ' ✓' : fs === 'warn' ? 'Archivio in pausa: tocca per riattivarlo' : fs === 'bad' ? 'Errore nell\'archivio: ' + Archive.err : 'Nessuna cartella di archivio (Impostazioni)';
+    fold = `<i class="si ${fs} sif" title="${esc(ftxt)}">${ICO.folder}</i>`;
+  }
+  const fm = fold && /cartella/i.test(txt); // il problema è dell'archivio: lo dice la cartella, il salvataggio sul dispositivo è a posto
+  const all = txt + (ftxt ? ' • ' + ftxt : '');
+  const sv = fm && !busy ? 'ok' : st;
+  b.className = 'stat'; b.title = all; b.setAttribute('role', 'button'); b.setAttribute('aria-label', all);
+  b.innerHTML = `<i class="si ${sv}${busy ? ' busy' : ''}">${cloud ? ICO.cloud : ICO.save}</i>${fold}<span class="vh">${esc(all)}</span>`;
+  b.onclick = act || (() => toast(all, st === 'bad', 6000));
+  const fi = b.querySelector('.sif'); // la cartella ha il suo tocco: riattiva il permesso o spiega l'errore
+  if (fi) fi.onclick = e => { e.stopPropagation(); if (fs === 'warn') Archive.regrant(); else if (fs === 'bad') toast((typeof ARCH_HELP === 'string' ? ARCH_HELP + ' ' : '') + '(' + Archive.err + ')', true, 12000); else toast(ftxt, false, 6000); };
+}
+function syncBadge0(b) {
   const up = Uploads.count();
   if (!CAP.db) { if (PLATFORM === 'pwa') return pwaBadge(b); b.className = 'chip warn'; b.textContent = 'Solo su questo tablet' + (Sync.pending() ? ' •' : ''); return; }
   if (Sync.err === 'offline' || (up && !navigator.onLine)) { b.className = 'chip warn'; b.textContent = 'Offline: in coda (' + (Sync.pending() + up) + ')'; return; }

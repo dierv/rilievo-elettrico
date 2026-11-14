@@ -1,8 +1,8 @@
 <div id="home">
-  <div class="row" style="align-items:flex-end">
-    <div style="flex:3">
-      <h1>Rilievo elettrico</h1>
-      <div class="mut">Planimetria + foto → bozza dell'impianto esistente</div>
+  <div class="row wrap hhead">
+    <div class="brand">
+      <svg class="blogo" viewBox="0 0 1024 1024" aria-hidden="true"><defs><linearGradient id="slg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2d62f3"/><stop offset="1" stop-color="#1739ad"/></linearGradient></defs><rect width="1024" height="1024" rx="230" fill="url(#slg)"/><g fill="none" stroke="#fff" stroke-width="64" stroke-linejoin="round" stroke-linecap="round"><path d="M262 412V262H412"/><path d="M612 262H762V412"/><path d="M762 612V762H612"/><path d="M412 762H262V612"/></g><path d="M558 305L410 546H509L464 719L621 473H521L587 305Z" fill="#fbbf24"/></svg>
+      <div><h1>Sopra<span>Lux</span></h1><div class="mut bsub">Rilievi elettrici: dalla pianta al computo</div></div>
     </div>
     <div style="flex:none" class="row">
       <button id="hLib">Simboli</button>
@@ -21,10 +21,11 @@
     <select id="planSel"></select>
     <button id="bAddPlan" class="sm">+ Tavola</button>
     <div class="sp"></div>
-    <span id="syncB" class="chip grey">…</span>
+    <span id="syncB" class="stat"></span>
     <button id="bUndo" class="sm" title="Annulla">&#8630; Annulla</button>
     <button id="bComputo" class="sm pri">Computo / Esporta</button>
-    <button id="bMenu" class="sm">&#8942;</button>
+    <button id="bMenu" class="sm" title="Menu">&#8942;</button>
+    <div class="tbbr"></div>
   </div>
   <div id="main">
     <div id="tools"></div>
@@ -40,7 +41,7 @@
       <div id="rotPanel" class="hide"></div>
       <div id="palette" class="hide"></div>
     </div>
-    <div id="panel"></div>
+    <div id="pwrap"><button id="pnTog" type="button" aria-expanded="true"><span class="pnh"></span><span class="pnc"></span></button><div id="panel"></div></div>
   </div>
 </div>
 

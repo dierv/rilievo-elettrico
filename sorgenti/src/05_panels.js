@@ -97,7 +97,7 @@ function renderPanel() {
       <li><b>Misura</b>: tocca due o più punti (vanno esattamente dove tocchi, senza agganci): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Colori del DXF</b> (interruttore «colori» sopra la rotazione, solo per le tavole DXF): mostra la pianta con i colori di AutoCAD o tutta in nero. Per una tavola importata prima, il primo tocco chiede lo stesso file DXF e aggiunge i colori senza spostare niente.</li>
       <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li></ol></div>
-    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:#c2410c">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div>${S.clip ? `<div class="row" style="margin-top:8px"><button class="sm pri" data-act="pasteRooms">📋 Incolla ${S.clip.rooms.length} ${S.clip.rooms.length === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}</div>
+    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:var(--tor)">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div>${S.clip ? `<div class="row" style="margin-top:8px"><button class="sm pri" data-act="pasteRooms">📋 Incolla ${S.clip.rooms.length} ${S.clip.rooms.length === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}</div>
     <div class="sec"><b>Visualizza</b>
       <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
       <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
@@ -216,6 +216,21 @@ function itemPanel(el, it) {
     <div class="sec row"><button class="sm danger" data-act="delItem">Elimina</button><button class="sm ghost" data-act="desel">Chiudi</button></div>`;
 }
 
+/* pannello laterale (in verticale: in basso) contraibile; da chiuso mostra il titolo di quello che c'è dentro */
+function initPanelToggle() {
+  const w = $('#pwrap'), t = $('#pnTog'), P = $('#panel'); if (!w || !t) return;
+  const chev = '<svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+  const lab = () => {
+    const min = w.classList.contains('min'), h = P.querySelector('h2');
+    t.querySelector('.pnh').textContent = min ? (h ? h.textContent.replace(/\s+/g, ' ').trim() : 'Dettagli') : '';
+    t.querySelector('.pnc').innerHTML = (min ? 'Apri' : 'Nascondi') + chev;
+    t.setAttribute('aria-expanded', String(!min)); t.title = min ? 'Apri il pannello' : 'Nascondi il pannello';
+  };
+  const set = min => { w.classList.toggle('min', min); UIP.set('pnMin', min); lab(); };
+  set(!!UIP.get('pnMin', false));
+  t.onclick = () => set(!w.classList.contains('min'));
+  new MutationObserver(() => { if (w.classList.contains('min')) lab(); }).observe(P, { childList: true });
+}
 function initPanel() {
   const el = $('#panel');
   el.addEventListener('click', async e => {
@@ -554,20 +569,36 @@ function editSymbol(i) {
 
 /* ============ IMPOSTAZIONI ============ */
 async function openSettings() {
-  const st = ST();
-  const b = openModal(`<h3>Impostazioni</h3>${PLATFORM === 'pwa' ? pwaSettingsHtml() : ''}
+  const st = ST(); const th = UIP.get('theme', 'light'), db = dxfBg();
+  const seg = (id, opts, cur) => `<div class="seg" id="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" class="${v === cur ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+  const hasKey = PLATFORM === 'pwa' ? !!aiKey() : !!CAP.sample;
+  const b = openModal(`<h3>Impostazioni</h3>
+    <div class="sech" style="border:none;padding-top:0;margin-top:4px">Aspetto</div>
+    <label class="f">Tema</label>${seg('tTheme', [['light', 'Chiaro'], ['dark', 'Scuro'], ['auto', 'Come il tablet']], th)}
+    <label class="f">Sfondo delle tavole DXF</label>${seg('tDxfBg', Object.entries(DXF_BG).map(([k, v]) => [k, v[0]]), db)}
+    <div class="mut small">Il tema scuro riposa gli occhi in interni e di sera; al sole si legge meglio il chiaro. Le tavole PDF e foto restano come sono; sul DXF grigio o nero i tratti tornano chiari come in AutoCAD e l'inchiostro nero della penna si vede bianco. Le esportazioni restano su fondo bianco.</div>
+    ${PLATFORM === 'pwa' ? pwaSettingsHtml() : ''}
+    <div class="sech">Disegno</div>
+    <div class="row"><div style="flex:.5"><label class="f">Dimensione simboli (px)</label><input id="tSym" type="number" value="${st.symPx}"></div></div>
+    <label class="row small"><input type="checkbox" id="tPen" style="width:auto;min-height:0" ${st.penOnly !== false ? 'checked' : ''}> Con la penna (Apple Pencil, S Pen…): la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo non lascia segni</label>
+    <div class="row small" style="gap:10px;align-items:center"><span class="mut" style="flex:1">Se un tratto della penna non compare: scrivi di nuovo, poi copia il registro della penna e mandalo all'assistenza.</span><button class="sm" id="tPenLog" style="flex:none">Copia registro penna</button></div>
+    <div class="sech">Foto e locali</div>
+    <div class="row"><div><label class="f">Campo visivo fotocamera (°)</label><input id="tFov" type="number" value="${st.fov}"></div><div><label class="f">Altezza tablet (m)</label><input id="tCam" type="number" step="0.05" value="${st.camH}"></div><div><label class="f">Altezza locali default (m)</label><input id="tH" type="number" step="0.05" value="${st.roomH}"></div></div>
+    <div class="mut small">Campo visivo: lato lungo della foto. Taratura: fotografa in orizzontale una parete da 2 m di distanza e misura quanti metri entrano nella foto (L): FOV = 2·atan(L/4).</div>
+    <details class="setai" id="tAiBox"${hasKey ? ' open' : ''}><summary>Intelligenza artificiale <span class="mut small">(facoltativa)</span></summary>
+    ${PLATFORM === 'pwa' ? pwaAiHtml() : ''}
     <label class="f">Riconoscimento AI</label>
     <div class="row"><select id="tTier"><option value="quick">Veloce (meno preciso)</option><option value="default">Standard (consigliato)</option><option value="complex">Massima precisione (più lento)</option></select>
     <label class="row small" style="flex:none"><input type="checkbox" id="tAuto" style="width:auto;min-height:0" ${st.auto ? 'checked' : ''}> Analizza subito ogni foto</label></div>
     <label class="row small"><input type="checkbox" id="tZoom" style="width:auto;min-height:0" ${st.plZoom !== false ? 'checked' : ''}> Secondo sguardo alle placche: ogni placca viene ingrandita per contare i posti e riconoscere le prese (tasti e tappi restano come nella prima lettura); una richiesta AI in più per foto</label>
-    <div class="row"><div><label class="f">Campo visivo fotocamera (°)</label><input id="tFov" type="number" value="${st.fov}"></div><div><label class="f">Altezza tablet (m)</label><input id="tCam" type="number" step="0.05" value="${st.camH}"></div><div><label class="f">Altezza locali default (m)</label><input id="tH" type="number" step="0.05" value="${st.roomH}"></div></div>
-    <div class="mut small">Campo visivo: lato lungo della foto. Taratura: fotografa in orizzontale una parete da 2 m di distanza e misura quanti metri entrano nella foto (L): FOV = 2·atan(L/4).</div>
-    <label class="f">Disegno</label>
-    <div class="row"><div style="flex:.5"><label class="f">Dimensione simboli (px)</label><input id="tSym" type="number" value="${st.symPx}"></div></div>
-    <label class="row small"><input type="checkbox" id="tPen" style="width:auto;min-height:0" ${st.penOnly !== false ? 'checked' : ''}> Con la penna (Apple Pencil, S Pen…): la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo non lascia segni</label>
-    <div class="row small" style="gap:10px;align-items:center"><span class="mut" style="flex:1">Se un tratto della penna non compare: scrivi di nuovo, poi copia il registro della penna e mandalo all'assistenza.</span><button class="sm" id="tPenLog" style="flex:none">Copia registro penna</button></div>
+    </details>
     <div id="tStore" class="mut small" style="margin-top:10px"></div>
     <div class="acts"><button onclick="closeModal()">Annulla</button><button class="pri" id="tOk">Salva</button></div>`);
+  b.querySelectorAll('#tTheme button').forEach(x => x.onclick = () => { b.querySelectorAll('#tTheme button').forEach(y => y.classList.toggle('on', y === x)); UIP.set('theme', x.dataset.v); applyTheme(); });
+  b.querySelectorAll('#tDxfBg button').forEach(x => x.onclick = async () => {
+    b.querySelectorAll('#tDxfBg button').forEach(y => y.classList.toggle('on', y === x)); UIP.set('dxfBg', x.dataset.v);
+    const P = curPlan(); if (P && planIsDxf(P)) { try { await loadPlanImage(P.id, true); } catch (e) { } redraw(); }
+  });
   b.querySelector('#tTier').value = st.tier;
   b.querySelector('#tOk').onclick = () => {
     st.tier = b.querySelector('#tTier').value; st.auto = b.querySelector('#tAuto').checked; st.plZoom = b.querySelector('#tZoom').checked;

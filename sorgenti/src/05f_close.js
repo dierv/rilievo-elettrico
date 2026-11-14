@@ -18,8 +18,8 @@ function openGeneralCheck() {
     ${g.warn ? `<div class="banner warn">${g.warn} segnalazion${g.warn === 1 ? 'e' : 'i'}: guardale prima di lasciare il cantiere.</div>` : '<div class="banner ok">Tutto coerente: ogni locale ha foto, punto luce e comandi.</div>'}
     ${g.pend.length ? `<div class="row" style="margin:8px 0"><span class="small">${g.pend.length} foto ancora da analizzare.</span>${canAI() ? `<button class="ai sm" id="gcAI" style="flex:none">✦ Analizzale ora</button>` : '<span class="mut small">(AI non disponibile adesso)</span>'}</div>` : ''}
     ${g.plans.map(o => `<div class="sec"><b>${esc(o.plan.name)}</b> <span class="mut small">${o.rooms.length} locali • ${o.items} elementi</span>
-      ${o.scale ? '' : '<div class="small" style="color:#c2410c">🟠 scala non calibrata: le misure e il DXF non sono in scala</div>'}
-      ${o.rooms.length ? '' : '<div class="small" style="color:#c2410c">🟠 nessun locale disegnato</div>'}
+      ${o.scale ? '' : '<div class="small" style="color:var(--tor)">🟠 scala non calibrata: le misure e il DXF non sono in scala</div>'}
+      ${o.rooms.length ? '' : '<div class="small" style="color:var(--tor)">🟠 nessun locale disegnato</div>'}
       ${o.noRoom ? `<div class="mut small">🌳 ${o.noRoom} foto esterne (fuori dai locali): i loro elementi sono negli ${EXT_NAME}</div>` : ''}
       <div class="dlist" style="margin-top:6px">${o.rooms.map(x => `<div class="drow" data-go="${x.r.id}"><span style="font-size:16px">${ROOM_DOT[x.st]}</span><div class="g"><b>${esc(x.r.name)}</b>${x.st === 'done' ? '' : `<div class="small">${x.iss.length ? x.iss.map(i => `<span style="color:${i.lvl === 'warn' ? '#c2410c' : '#1e3a8a'}">${esc(i.t)}</span>`).join(' • ') : '<span style="color:#166534">coerente</span>'}</div>`}</div></div>`).join('')}</div>
       ${o.hints ? `<div class="mut small" style="margin-top:4px">⚠ ${o.hints} indizi AI (non conteggiati)</div>` : ''}</div>`).join('')}

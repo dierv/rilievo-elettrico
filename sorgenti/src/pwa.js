@@ -1,7 +1,7 @@
 /* ============ APP INSTALLATA SUL TABLET (PWA): archivio locale e accesso Google ============ */
 // Copia persistente nel browser, archivio facoltativo su cartella e sincronizzazione
 // privata per account gestita da pwa_cloud.js.
-// L'AI usa la chiave API Anthropic dell'utente, salvata solo su questo tablet; la spesa si somma per sopralluogo.
+// L'AI usa la chiave API dell'utente (Claude, ChatGPT, Gemini o Grok), salvata solo su questo tablet; la spesa di Claude si somma per sopralluogo.
 // Configurazione pubblica dell'app Firebase; i dati sono protetti dalle regole per UID.
 const FIREBASE_CONFIG = Object.freeze({
   apiKey: 'AIzaSyBzw4JrWepad4z7tewA1scNNEZ4gr7sxAs',
@@ -18,6 +18,50 @@ const KV = {
 
 /* ---- AI con la chiave API ---- */
 const API_MODELS = { quick: 'claude-haiku-5-5', default: 'claude-sonnet-5-5', complex: 'claude-opus-5-5' };
+// servizi AI: le regole del riconoscimento sono tarate su Claude; gli altri ricevono le stesse istruzioni
+const AI_PROV = {
+  claude: { name: 'Claude', by: 'Anthropic', kv: 'apiKey', id: 'tKey', ph: 'sk-ant-…', site: 'platform.claude.com → API keys (workspace "Default", credito prepagato)' },
+  openai: { name: 'ChatGPT', by: 'OpenAI', kv: 'apiKey_openai', id: 'tKeyO', ph: 'sk-…', site: 'platform.openai.com → API keys (credito prepagato)' },
+  gemini: { name: 'Gemini', by: 'Google', kv: 'apiKey_gemini', id: 'tKeyG', ph: 'AIza…', site: 'aistudio.google.com → Get API key' },
+  grok: { name: 'Grok', by: 'xAI', kv: 'apiKey_xai', id: 'tKeyX', ph: 'xai-…', site: 'console.x.ai → API keys' },
+};
+const AI_DEF_MODELS = { // se l'elenco dei modelli del servizio non si legge
+  openai: { quick: 'gpt-6-luna', default: 'gpt-6.1-terra', complex: 'gpt-6.1-sol' },
+  gemini: { quick: 'gemini-3.5-flash-lite', default: 'gemini-3.8-flash', complex: 'gemini-4-argon' },
+  grok: { quick: 'grok-4.7', default: 'grok-4.7', complex: 'grok-4.7' },
+};
+const aiProv = () => { const p = KV.get('aiProv', 'claude'); return AI_PROV[p] ? p : 'claude'; };
+const aiKey = (p = aiProv()) => KV.get(AI_PROV[p].kv);
+function aiModel(p, tier) {
+  if (p === 'claude') return API_MODELS[tier] || API_MODELS.default;
+  const m = Object.assign({}, AI_DEF_MODELS[p], (KV.get('aiModels', {}) || {})[p]); return m[tier] || m.default;
+}
+const AI_HOST = { openai: 'https://api.openai.com', grok: 'https://api.x.ai', gemini: 'https://generativelanguage.googleapis.com' };
+const aiHead = (p, key) => p === 'gemini' ? { 'x-goog-api-key': key } : { authorization: 'Bearer ' + key };
+async function aiErrOf(r) { let m = ''; try { const j = await r.json(); m = (j.error && (j.error.message || (typeof j.error === 'string' ? j.error : ''))) || j.message || ''; } catch (e) { } return m; }
+async function aiDiscover(p, key) { // sceglie i modelli più recenti fra quelli che la chiave può usare
+  const r = await fetch(AI_HOST[p] + (p === 'gemini' ? '/v1beta/models?pageSize=1000' : '/v1/models'), { headers: aiHead(p, key) });
+  if (!r.ok) { const m = await aiErrOf(r); throw { code: apiErrCode(r.status, m), message: m, status: r.status }; }
+  const j = await r.json();
+  let ids = p === 'gemini' ? (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => String(m.name).replace(/^models\//, '')) : (j.data || []).map(m => String(m.id));
+  ids = ids.filter(i => !/audio|realtime|transcri|tts|speech|search|codex|image|imagine|video|embed|moderation|live|preview|exp|computer|robotics|oss|instruct|research|rosalind|latest|-\d{4}-?\d{2}-?\d{2}|-\d{3,4}$/i.test(i));
+  const ver = i => { const m = /(\d+(?:\.\d+)?)/.exec(i); return m ? parseFloat(m[1]) : 0; };
+  const best = (l, re) => l.filter(i => re.test(i)).sort((a, b) => ver(b) - ver(a) || a.length - b.length)[0];
+  let m = {};
+  if (p === 'openai') {
+    const g = ids.filter(i => /^gpt-\d/.test(i) && !/-pro\b|nano|chat/.test(i)), plain = best(g, /^gpt-\d+(\.\d+)?$/);
+    m.complex = best(g, /astra/) || best(g, /sol/) || plain; m.default = best(g, /terra/) || plain || m.complex; m.quick = best(g, /luna/) || best(g, /mini/) || m.default;
+  } else if (p === 'gemini') {
+    const g = ids.filter(i => /^gemini-\d/.test(i)), top = best(g.filter(i => !/flash|lite|nano/.test(i)), /./);
+    m.default = best(g, /flash(?!-lite)/) || top; m.complex = top || m.default; m.quick = best(g, /flash-lite/) || m.default;
+  } else {
+    const g = ids.filter(i => /^grok-\d/.test(i)), top = best(g.filter(i => !/fast|mini/.test(i)), /./);
+    m.complex = top; m.default = top; m.quick = best(g, /fast|mini/) || top;
+  }
+  Object.keys(m).forEach(k => { if (!m[k]) delete m[k]; });
+  const all = KV.get('aiModels', {}) || {}; all[p] = Object.assign({ ts: Date.now(), kf: String(key).slice(-6) }, m); KV.set('aiModels', all);
+  return all[p];
+}
 const API_PRICE = { // $ per milione di token: input, scrittura cache (5 min), lettura cache, output — listino ufficiale nov 2026
   'claude-opus-5-5': [4, 5, 0.2, 20], 'claude-sonnet-5-5': [2, 2.5, 0.1, 10], 'claude-haiku-5-5': [0.1, 0.125, 0.01, 0.5],
 };
@@ -49,14 +93,17 @@ async function apiImage(blob) { // al massimo 2576 px e meno di 3,7 MB
   return { media_type: 'image/jpeg', data: await blobToB64(out) };
 }
 async function apiCall(prompt, opts, json) {
-  const key = KV.get('apiKey'); if (!key) throw { code: 'no_key' };
+  const prov = aiProv(), key = aiKey(prov); if (!key) throw { code: 'no_key' };
   if (!navigator.onLine) throw { code: 'offline' };
-  const model = API_MODELS[opts.modelTier] || API_MODELS.default; const sid = S.sv && S.sv.id;
-  // regole e legenda sono uguali per ogni foto: vanno in cache e dalla seconda foto costano un decimo
-  let system, text = prompt; const iC = prompt.indexOf('\nCONTESTO\n'), iT = prompt.indexOf('\nCOMPITO\n');
-  if (iC > 0 && iT > iC && prompt.length - iT > 3000) { system = [{ type: 'text', text: prompt.slice(0, iC).trim() + '\n' + prompt.slice(iT), cache_control: { type: 'ephemeral' } }]; text = prompt.slice(iC + 1, iT).trim(); }
-  const content = [];
-  for (const im of opts.images || []) { const p = await apiImage(im); content.push({ type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } }); }
+  const sid = S.sv && S.sv.id;
+  // regole e legenda sono uguali per ogni foto: vanno nelle istruzioni di sistema (con Claude in cache: dalla seconda foto costano un decimo)
+  let sys = null, text = prompt; const iC = prompt.indexOf('\nCONTESTO\n'), iT = prompt.indexOf('\nCOMPITO\n');
+  if (iC > 0 && iT > iC && prompt.length - iT > 3000) { sys = prompt.slice(0, iC).trim() + '\n' + prompt.slice(iT); text = prompt.slice(iC + 1, iT).trim(); }
+  const imgs = []; for (const im of opts.images || []) imgs.push(await apiImage(im));
+  if (prov !== 'claude') return apiCallOther(prov, key, sys, text, imgs, opts, json, sid);
+  const model = API_MODELS[opts.modelTier] || API_MODELS.default;
+  const system = sys ? [{ type: 'text', text: sys, cache_control: { type: 'ephemeral' } }] : null;
+  const content = imgs.map(p => ({ type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } }));
   content.push({ type: 'text', text });
   const body = { model, max_tokens: json ? 16000 : 8000, messages: [{ role: 'user', content }] }; if (system) body.system = system;
   let r;
@@ -74,11 +121,43 @@ async function apiCall(prompt, opts, json) {
   if (opts.onText) { try { opts.onText({ text: out }); } catch (e) { } }
   return json ? parseLooseJson(out) : { text: out };
 }
+async function apiCallOther(prov, key, sys, text, imgs, opts, json, sid) { // ChatGPT e Grok (Responses API), Gemini (generateContent)
+  const ms = (KV.get('aiModels', {}) || {})[prov];
+  if (!ms || Date.now() - (ms.ts || 0) > 7 * 864e5) { try { await aiDiscover(prov, key); } catch (e) { if (e && ['bad_key', 'credit'].includes(e.code)) { CAP.aiOff = true; AIQ.stop(); toast(AI_ERR[e.code], true, 9000); throw e; } } }
+  const model = aiModel(prov, opts.modelTier || 'default'); let url, body;
+  if (prov === 'gemini') {
+    url = `${AI_HOST.gemini}/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    body = { contents: [{ role: 'user', parts: [...imgs.map(p => ({ inlineData: { mimeType: p.media_type, data: p.data } })), { text }] }], generationConfig: { maxOutputTokens: json ? 16000 : 8000 } };
+    if (json) body.generationConfig.responseMimeType = 'application/json';
+    if (sys) body.systemInstruction = { parts: [{ text: sys }] };
+  } else {
+    url = AI_HOST[prov] + '/v1/responses';
+    body = { model, input: [{ role: 'user', content: [...imgs.map(p => ({ type: 'input_image', image_url: `data:${p.media_type};base64,${p.data}` })), { type: 'input_text', text }] }], max_output_tokens: json ? 16000 : 8000 };
+    if (sys) body.instructions = sys;
+  }
+  let r;
+  try { r = await fetch(url, { method: 'POST', signal: opts.signal, headers: Object.assign({ 'content-type': 'application/json' }, aiHead(prov, key)), body: JSON.stringify(body) }); }
+  catch (e) { if (e && e.name === 'AbortError') throw e; throw { code: navigator.onLine ? 'network' : 'offline' }; }
+  if (!r.ok) {
+    const msg = await aiErrOf(r); console.warn('API', prov, model, r.status, msg);
+    if (r.status === 404 || /model.*(not found|does not exist|not supported)/i.test(msg)) { const all = KV.get('aiModels', {}) || {}; delete all[prov]; KV.set('aiModels', all); } // modello cambiato: alla prossima si rilegge l'elenco
+    const code = apiErrCode(r.status, msg);
+    if (['bad_key', 'credit'].includes(code)) { CAP.aiOff = true; AIQ.stop(); toast(AI_ERR[code], true, 9000); }
+    throw { code, message: msg };
+  }
+  const j = await r.json(); let out = '';
+  if (prov === 'gemini') out = (((j.candidates || [])[0] || {}).content || { parts: [] }).parts.map(p => p.text || '').join('');
+  else out = typeof j.output_text === 'string' ? j.output_text : (j.output || []).flatMap(o => o.content || []).filter(c => c.type === 'output_text').map(c => c.text || '').join('');
+  await addSurveyCost(sid, 0); // la spesa la mostra il sito del servizio
+  if (opts.onText) { try { opts.onText({ text: out }); } catch (e) { } }
+  return json ? parseLooseJson(out) : { text: out };
+}
 function apiErrCode(status, msg) {
   if (/not scoped to a workspace/i.test(msg)) return 'key_scope'; // chiave di tutta l'organizzazione: serve una chiave legata a un workspace
   if (/CORS requests are not allowed/i.test(msg)) return 'cors_org';
-  if (status === 401 || status === 403) return 'bad_key';
-  if (/credit balance|billing/i.test(msg) || status === 402) return 'credit';
+  if (status === 429) return /insufficient_quota|billing|credit/i.test(msg) ? 'credit' : 'rate_limited';
+  if (/credit balance|billing|insufficient|credits|spending limit/i.test(msg) || status === 402) return 'credit';
+  if (status === 401 || status === 403 || /api key not valid|invalid api key|incorrect api key|invalid x-api-key/i.test(msg)) return 'bad_key';
   return status === 429 ? 'rate_limited' : status === 529 || status >= 500 ? 'overloaded' : status === 413 ? 'prompt_too_large' : 'api_' + status;
 }
 const ApiSample = Object.assign((prompt, opts) => apiCall(prompt, opts || {}, false), {
@@ -87,7 +166,7 @@ const ApiSample = Object.assign((prompt, opts) => apiCall(prompt, opts || {}, fa
 });
 Object.assign(AI_ERR, {
   no_key: 'Manca la chiave API: inseriscila in Impostazioni.', bad_key: 'Chiave API non valida: controllala in Impostazioni.',
-  credit: 'Credito API esaurito: ricaricalo su console.anthropic.com.', overloaded: 'Servizio AI sovraccarico: riprova tra poco.',
+  credit: 'Credito API esaurito: ricaricalo sul sito del servizio AI scelto (Impostazioni → Intelligenza artificiale).', overloaded: 'Servizio AI sovraccarico: riprova tra poco.',
   network: 'Connessione all\'AI non riuscita: riprova.', offline: 'Sei offline: la foto verrà analizzata al ritorno della rete.',
   key_scope: 'Questa chiave vale per tutta l\'organizzazione: creane una legata al workspace "Default" (platform.claude.com → API keys) e incollala in Impostazioni.',
   cors_org: 'La tua organizzazione Anthropic non permette chiamate dal browser: usa una chiave di un account senza questa restrizione.',
@@ -120,7 +199,7 @@ function shareSheet(file) { // il foglio di condivisione si apre solo da un tocc
   });
 }
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-window.claude = { use: async n => n === 'sample' ? (KV.get('apiKey') ? ApiSample : null) : n === 'downloads' ? LocalDL : null };
+window.claude = { use: async n => n === 'sample' ? (aiKey() ? ApiSample : null) : n === 'downloads' ? LocalDL : null };
 
 /* ---- archivio su una cartella del tablet ---- */
 async function fsDir(root, parts, create = true) { let d = root; for (const p of parts) d = await d.getDirectoryHandle(p, { create }); return d; }
@@ -289,38 +368,54 @@ function pwaBadge(b) {
   if (Sync.pending() || Sync.busy || Archive.busy) { b.className = 'chip grey'; b.textContent = 'Salvataggio…'; return; }
   b.className = 'chip ok'; b.textContent = Archive.ready() ? 'Salvato ✓ tablet + cartella' : 'Salvato sul tablet ✓';
 }
-function pwaSettingsHtml() {
-  const k = KV.get('apiKey'); const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7);
-  return `<label class="f">Chiave API Anthropic (per il riconoscimento AI)</label>
-    <div class="row"><input id="tKey" type="password" autocomplete="off" placeholder="sk-ant-…" value="${k ? '••••••••' + esc(k.slice(-4)) : ''}"><button id="tKeyTest" style="flex:none">Prova</button></div>
-    <div class="mut small">Resta solo su questo tablet. Si crea su platform.claude.com → API keys, scegliendo il workspace "Default" (serve credito prepagato). Spesa AI su questo tablet: ${fmtUsd(sp[m] || 0)} questo mese, ${fmtUsd(sp.all || 0)} in tutto.</div>
-    <label class="f">Archivio su cartella</label>
+function pwaSettingsHtml() { // archivio su cartella (l'AI è in pwaAiHtml)
+  return `<div class="sech">Archivio su cartella</div>
     <div class="row wrap">${Archive.ok() ? `<span class="small" style="flex:1">${Archive.root ? `Cartella "<b>${esc(Archive.root.name)}</b>"${Archive.err ? ' <span style="color:var(--bad)">– errore: ' + esc(Archive.err) + '</span>' : Archive.ready() ? ' ✓' : ' (in pausa)'}` : 'Nessuna cartella scelta'}</span><button class="sm" id="tArch" style="flex:none">${Archive.root ? 'Cambia cartella' : 'Scegli cartella'}</button>${Archive.root ? '<button class="sm" id="tArchAll" style="flex:none">Salva tutto ora</button><button class="sm" id="tArchRec" style="flex:none">Recupera dalla cartella</button>' : ''}` : '<span class="mut small">Non disponibile in questo browser: usa "Backup completo".</span>'}</div>`;
+}
+function pwaAiHtml() { // chiavi dei quattro servizi AI e scelta di quello da usare
+  const sp = KV.get('spesa', {}); const m = new Date().toISOString().slice(0, 7); const cur = aiProv();
+  const keys = Object.entries(AI_PROV).map(([p, o]) => { const k = KV.get(o.kv); const ms = p === 'claude' ? null : (KV.get('aiModels', {}) || {})[p];
+    return `<div class="aik"><div class="row" style="gap:6px"><b style="flex:none">${o.name}</b><span class="mut small" style="flex:1">${o.by}</span>${k ? '<span class="chip ok" style="flex:none">chiave ✓</span>' : ''}</div>
+      <div class="row"><input id="${o.id}" data-p="${p}" class="aikey" type="password" autocomplete="off" placeholder="${o.ph}" value="${k ? '••••••••' + esc(k.slice(-4)) : ''}"><button class="sm aitest" data-p="${p}" style="flex:none">Prova</button></div>
+      <div class="mut small">Si crea su ${esc(o.site)}.${ms && ms.default ? ' Modello: ' + esc(ms.default) + '.' : ''}</div></div>`; }).join('');
+  return `<label class="f">Servizio da usare</label>
+    <div class="seg" id="tProv">${Object.entries(AI_PROV).map(([p, o]) => `<button type="button" data-v="${p}" class="${p === cur ? 'on' : ''}">${o.name}</button>`).join('')}</div>
+    ${keys}
+    <div class="mut small" style="margin-top:6px">Le chiavi restano solo su questo dispositivo e vanno solo al servizio scelto. Le regole del riconoscimento sono tarate su Claude: con gli altri servizi i risultati possono cambiare. Spesa Claude su questo dispositivo: ${fmtUsd(sp[m] || 0)} questo mese, ${fmtUsd(sp.all || 0)} in tutto (per gli altri servizi la spesa si vede sul loro sito).</div>`;
+}
+async function aiTestKey(p, key) { // prova la chiave: Claude con una domanda brevissima, gli altri leggendo l'elenco dei modelli
+  if (p === 'claude') {
+    const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: API_MODELS.quick, max_tokens: 5, messages: [{ role: 'user', content: 'Rispondi solo: OK' }] }) });
+    if (r.ok) { const j = await r.json(); await addSurveyCost(null, usageCost(API_MODELS.quick, j.usage)); return 'Chiave Claude valida ✓'; }
+    const m = await aiErrOf(r); throw { code: apiErrCode(r.status, m), message: m, status: r.status };
+  }
+  const ms = await aiDiscover(p, key); return `Chiave ${AI_PROV[p].name} valida ✓` + (ms && ms.default ? ' – modello ' + ms.default : '');
 }
 function pwaSettingsWire(b) {
   const q = s => b.querySelector(s);
-  q('#tKey').onfocus = e => { if (e.target.value.startsWith('••')) e.target.value = ''; };
-  q('#tKeyTest').onclick = async e => {
-    const v = q('#tKey').value.trim(); const key = v && !v.startsWith('••') ? v : KV.get('apiKey'); if (!key) { toast('Scrivi prima la chiave', true); return; }
-    e.target.disabled = true; e.target.textContent = 'Provo…';
-    try {
-      const r = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }, body: JSON.stringify({ model: API_MODELS.quick, max_tokens: 5, messages: [{ role: 'user', content: 'Rispondi solo: OK' }] }) });
-      if (r.ok) { const j = await r.json(); await addSurveyCost(null, usageCost(API_MODELS.quick, j.usage)); toast('Chiave valida ✓'); }
-      else { let m = ''; try { m = (await r.json()).error.message; } catch (x) { } const c = apiErrCode(r.status, m); toast(c === 'bad_key' ? 'Chiave non valida' : c === 'credit' ? 'Chiave valida ma senza credito' : AI_ERR[c] || 'Errore ' + r.status + ': ' + m, true, 9000); }
-    } catch (x) { toast('Nessuna connessione', true); }
-    e.target.disabled = false; e.target.textContent = 'Prova';
-  };
+  b.querySelectorAll('.aikey').forEach(i => { i.onfocus = e => { if (e.target.value.startsWith('••')) e.target.value = ''; }; });
+  b.querySelectorAll('#tProv button').forEach(x => { x.onclick = () => b.querySelectorAll('#tProv button').forEach(y => y.classList.toggle('on', y === x)); });
+  b.querySelectorAll('.aitest').forEach(btn => btn.onclick = async e => {
+    const p = btn.dataset.p, inp = q('#' + AI_PROV[p].id), v = inp.value.trim(); const key = v && !v.startsWith('••') ? v : KV.get(AI_PROV[p].kv);
+    if (!key) { toast('Scrivi prima la chiave', true); return; }
+    btn.disabled = true; btn.textContent = 'Provo…';
+    try { toast(await aiTestKey(p, key), false, 6000); }
+    catch (x) { const c = x && x.code; toast(!c ? 'Nessuna connessione' : c === 'bad_key' ? 'Chiave non valida' : c === 'credit' ? 'Chiave valida ma senza credito' : AI_ERR[c] || 'Errore ' + (x.status || '') + ': ' + (x.message || ''), true, 9000); }
+    btn.disabled = false; btn.textContent = 'Prova';
+  });
   const on = (id, f) => { const e = q(id); if (e) e.onclick = f; };
   on('#tArch', async () => { closeModal(); if (await Archive.pick()) { syncBadge(); if (!$('#home').classList.contains('hide')) renderHome(); } });
   on('#tArchAll', async () => { closeModal(); if (!Archive.ready() && !await Archive.regrant()) return; const n = await Archive.syncAll(); toast(`Salvati ${n} sopralluoghi nella cartella`); });
   on('#tArchRec', () => { closeModal(); recoverFromFolder(); });
 }
 async function pwaSettingsSave(b) {
-  const v = b.querySelector('#tKey').value.trim();
-  if (v.startsWith('••')) return; // invariata
-  KV.set('apiKey', v || null); CAP.aiOff = false; await initCaps();
+  let ch = 0; const was = aiProv();
+  b.querySelectorAll('.aikey').forEach(i => { const v = i.value.trim(); if (v.startsWith('••')) return; const o = AI_PROV[i.dataset.p]; if ((KV.get(o.kv) || '') === v) return; KV.set(o.kv, v || null); ch++; if (i.dataset.p !== 'claude') { const all = KV.get('aiModels', {}) || {}; if (all[i.dataset.p] && all[i.dataset.p].kf !== v.slice(-6)) { delete all[i.dataset.p]; KV.set('aiModels', all); } } }); // modelli letti con un'altra chiave: si rileggono
+  const pb = b.querySelector('#tProv button.on'); if (pb && pb.dataset.v !== was) { KV.set('aiProv', pb.dataset.v); ch++; }
+  if (!ch) return;
+  CAP.aiOff = false; await initCaps();
   if (S.sv) { renderPanel(); aiBadge(); } else renderHome();
-  toast(v ? 'Chiave API salvata su questo tablet' : 'Chiave API rimossa: AI spenta');
+  const p = aiProv(); toast(aiKey(p) ? `AI: ${AI_PROV[p].name} (chiave salvata su questo dispositivo)` : `Manca la chiave di ${AI_PROV[p].name}: AI spenta`, !aiKey(p), 6000);
 }
 async function pwaBoot() {
   FirebaseAccount.init();

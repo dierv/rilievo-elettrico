@@ -152,7 +152,8 @@ function renderPlanSel() {
   s.disabled = !S.sv.plans.length;
 }
 async function switchPlan(id) {
-  S.planId = id; S.sel = null; S.tmp = {}; S.penDraw = null; // la penna riparte nella nuova tavola Object.keys(S.planImg).forEach(k => { if (k !== id) delete S.planImg[k]; }); renderPlanSel(); renderPanel(); redraw();
+  S.planId = id; S.sel = null; S.tmp = {}; S.penDraw = null; // la penna riparte nella nuova tavola
+  Object.keys(S.planImg).forEach(k => { if (k !== id) delete S.planImg[k]; }); renderPlanSel(); renderPanel(); redraw();
   try { await loadPlanImage(id); fitView(); updateHint(); }
   catch (e) { toast('Planimetria non disponibile: ' + (e.message || e), true, 6000); }
 }
@@ -267,7 +268,7 @@ async function dropStaleDocs(d) { // aggiornamento: via i documenti di tavole e 
 
 /* ============ AVVIO ============ */
 async function boot() {
-  initCanvas(); initPanel(); initViewer(); initPhotoInputs(); initVnInputs();
+  initCanvas(); initPanel(); initPanelToggle(); initViewer(); initPhotoInputs(); initVnInputs();
   $('#hNew').onclick = newSurvey; $('#hLib').onclick = openLibrary; $('#hSet').onclick = openSettings;
   $('#bBack').onclick = goHome; $('#bMenu').onclick = openMenu; $('#bComputo').onclick = openComputo; $('#bUndo').onclick = doUndo;
   $('#bAddPlan').onclick = () => addPlanMenu();

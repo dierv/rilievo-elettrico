@@ -147,6 +147,22 @@ function dxfInk(n) { // colore AutoCAD (pensato per il fondo nero) → leggibile
   else { const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; if (L > 0.55) { const k = 0.55 / L; r = Math.round(r * k); g = Math.round(g * k); b = Math.round(b * k); } } // giallo, celeste, verde chiaro: più scuri
   return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
 }
+function dxfOnDark(c, bg) { // DXF su fondo grigio o nero: la carta diventa il fondo e i tratti tornano chiari come in AutoCAD
+  const x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height), a = d.data;
+  const B = [1, 3, 5].map(i => parseInt(bg.slice(i, i + 2), 16));
+  for (let i = 0; i < a.length; i += 4) {
+    const r = a[i], g = a[i + 1], b = a[i + 2], mn = Math.min(r, g, b);
+    if (mn >= 250) { a[i] = B[0]; a[i + 1] = B[1]; a[i + 2] = B[2]; continue; } // carta
+    const al = (255 - mn) / 255; // quanto tratto c'è nel pixel (sulla carta bianca)
+    let ir = (r - 255 * (1 - al)) / al, ig = (g - 255 * (1 - al)) / al, ib = (b - 255 * (1 - al)) / al;
+    const mx = Math.max(ir, ig, ib), mi = Math.min(ir, ig, ib);
+    if (mx - mi < 40) { const v = 255 - (ir + ig + ib) / 3; ir = ig = ib = v; } // nero e grigi: chiaro ↔ scuro (l'inverso di dxfInk)
+    else { const k = 255 / Math.max(1, mx); ir *= k; ig *= k; ib *= k; } // colori schiariti per la carta bianca: di nuovo pieni
+    a[i] = al * ir + (1 - al) * B[0]; a[i + 1] = al * ig + (1 - al) * B[1]; a[i + 2] = al * ib + (1 - al) * B[2];
+  }
+  x.putImageData(d, 0, 0); return c;
+}
+const planIsDxf = P => !!(P && (P.dxf || P.src === 'dxf'));
 function toMono(c) { // tavola DXF «tutto nero»: ogni tratto colorato diventa nero (i grigi restano grigi)
   const x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height), a = d.data;
   for (let i = 0; i < a.length; i += 4) { const v = Math.min(a[i], a[i + 1], a[i + 2]); a[i] = a[i + 1] = a[i + 2] = v; }
@@ -249,24 +265,26 @@ async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = fals
 
 /* ---- immagine della tavola ---- */
 const dxfColOn = P => !!(P && P.dxfCol && ST().dxfCol); // tavola DXF mostrata con i colori originali
-function setPlanImage(pid, canvas) {
+function setPlanImage(pid, canvas, clean = false) {
   const w = canvas.width, h = canvas.height; const P = planOf(pid);
   if (P && P.dxfCol && !ST().dxfCol) toMono(canvas); // il file resta a colori: in bianco e nero solo la copia mostrata
+  const dark = !clean && planIsDxf(P) && dxfBg() !== 'w'; // fondo scuro solo sullo schermo: esportazioni sempre su bianco
   // riquadro della parte disegnata (per inquadrare solo il disegno, non i bordi bianchi del foglio)
   const k = Math.max(1, Math.ceil(Math.max(w, h) / 900)); const sw = Math.floor(w / k), sh = Math.floor(h / k);
   const t = newCanvas(sw, sh); t.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
   const d = t.getContext('2d').getImageData(0, 0, sw, sh).data; let x0 = sw, y0 = sh, x1 = 0, y1 = 0;
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) { const i = (y * sw + x) * 4; if (d[i + 3] > 128 && d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11 < 225) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
   const m = 8; const cb = x1 > x0 ? [Math.max(0, (x0 - m) * k), Math.max(0, (y0 - m) * k), Math.min(w, (x1 + m) * k), Math.min(h, (y1 + m) * k)] : null;
-  S.planImg[pid] = { canvas, w, h, cb };
+  if (dark) dxfOnDark(canvas, DXF_BG[dxfBg()][1]);
+  const out = { canvas, w, h, cb, dark }; if (!clean) S.planImg[pid] = out; return out;
 }
-async function loadPlanImage(pid, force = false) {
-  if (S.planImg[pid] && !force) return S.planImg[pid];
+async function loadPlanImage(pid, force = false, clean = false) {
+  if (S.planImg[pid] && !force && !(clean && S.planImg[pid].dark)) return S.planImg[pid];
   const p = planOf(pid); const url = blobUrl('plan_' + pid, p.asset);
   if (!url) throw new Error('Planimetria non disponibile su questo dispositivo');
   const img = new Image(); img.src = url; await img.decode();
   const c = newCanvas(img.naturalWidth, img.naturalHeight); c.getContext('2d').drawImage(img, 0, 0);
-  setPlanImage(pid, c); return S.planImg[pid];
+  return setPlanImage(pid, c, clean);
 }
 async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica l'immagine della tavola, la vista resta
   const P = curPlan(); if (!P || !(P.dxfCol || P.dxf)) return;

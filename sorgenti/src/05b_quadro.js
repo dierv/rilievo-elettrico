@@ -60,7 +60,7 @@ function quadroView(q, o = {}) {
   const filaKeys = [...byFila.keys()].sort((a, b) => a - b);
   const disp = filaKeys.map(f => {
     const l = byFila.get(f).slice().sort((a, b) => (a.d.pos || 0) - (b.d.pos || 0)); const decl = st.file.find(x => x.fila === f);
-    return `<tr><th colspan="4" style="text-align:left;background:#f1f5f9">Fila ${f || '?'}${decl && decl.moduli != null ? ` – ${decl.moduli} moduli` : ''}</th></tr>` + l.map(({ d, i }) => d.tipo === 'VUOTO'
+    return `<tr><th colspan="4" style="text-align:left;background:var(--sub)">Fila ${f || '?'}${decl && decl.moduli != null ? ` – ${decl.moduli} moduli` : ''}</th></tr>` + l.map(({ d, i }) => d.tipo === 'VUOTO'
       ? `<tr class="mut"${where(d, i)}><td class="n">${d.pos ?? ''}</td><td class="n">${nfq(d.moduli)}</td><td colspan="2">libero / coprimodulo</td></tr>`
       : `<tr${where(d, i)}><td class="n">${d.pos ?? ''}</td><td class="n">${nfq(d.moduli)}</td><td><b>${esc(fmtApp(d))}</b></td><td>${esc([d.funzione, d.etichetta && d.etichetta !== d.funzione ? '«' + d.etichetta + '»' : '', [d.marca, d.modello].filter(Boolean).join(' ')].filter(Boolean).join(' • '))}</td></tr>`).join('');
   }).join('');

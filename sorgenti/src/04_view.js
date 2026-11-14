@@ -103,10 +103,10 @@ function draw() {
   const c = $('#cv'); if (!c || $('#sv').classList.contains('hide')) return;
   const dpr = window.devicePixelRatio || 1; const W = c.clientWidth, H = c.clientHeight;
   if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-  const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = '#e3e6ea'; x.fillRect(0, 0, W, H);
+  const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.fillStyle = isDark() ? '#0d0f13' : '#e3e6ea'; x.fillRect(0, 0, W, H);
   const P = curPlan(); S.disp = new Map(); colBtnUpdate();
   if (!P) { x.fillStyle = '#5d6672'; x.font = '16px sans-serif'; x.textAlign = 'center'; x.fillText('Aggiungi una tavola con "+ Tavola" (PDF, DXF o foto della pianta)', W / 2, H / 2); return; }
-  const im = S.planImg[P.id]; const v = S.view;
+  const im = S.planImg[P.id]; const v = S.view; S.planDark = !!(im && im.dark);
   if (im) { x.save(); x.translate(v.tx, v.ty); if (v.r) x.rotate(v.r); x.scale(v.s, v.s); x.imageSmoothingEnabled = v.s < 1.5; x.drawImage(im.canvas, 0, 0); x.restore(); }
   else { x.fillStyle = '#5d6672'; x.font = '15px sans-serif'; x.textAlign = 'center'; x.fillText('Carico la planimetria…', W / 2, H / 2); }
   const k = ppm(P); const mpx = k * v.s; // px schermo per metro
@@ -245,7 +245,7 @@ function draw() {
     let m = 1; const opts = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]; for (const o of opts) { if (o * mpx > 70) { m = o; break; } m = o; }
     const L = m * mpx; const lab = m < 1 ? Math.round(m * 100) + ' cm' : String(m).replace('.', ',') + ' m';
     const pal = $('#palette'); const pb = pal && !pal.classList.contains('hide') ? pal.offsetHeight : 0;
-    x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(8, H - 34 - pb, L + 58, 26); x.fillStyle = '#111'; x.fillRect(14, H - 18 - pb, L, 4); x.font = '12px sans-serif'; x.textAlign = 'left'; x.fillText(lab, L + 20, H - 13 - pb);
+    const dk = isDark(); x.fillStyle = dk ? 'rgba(23,26,32,.88)' : 'rgba(255,255,255,.85)'; x.fillRect(8, H - 34 - pb, L + 58, 26); x.fillStyle = dk ? '#e7eaef' : '#111'; x.fillRect(14, H - 18 - pb, L, 4); x.font = '12px sans-serif'; x.textAlign = 'left'; x.fillText(lab, L + 20, H - 13 - pb);
   }
   if (S.loupe && hv) drawLoupe(x, W, H, P, im, hv);
   if (S.photos.some(p => p.aiSt === 'run')) setTimeout(redraw, 60);
@@ -303,10 +303,14 @@ function strokePath(x, pts, tr, w, col) { // tratto morbido (curve fra i punti m
     x.beginPath(); x.moveTo(a[0], a[1]); x.quadraticCurveTo(P[i][0], P[i][1], b[0], b[1]); x.lineWidth = Math.max(0.6, i === 1 ? (W[0] + W[1]) / 2 : W[i]); x.stroke(); a = b;
   }
 }
+function inkCol(col) { // sul DXF a fondo scuro l'inchiostro nero si vede bianco (solo sullo schermo)
+  if (!S.planDark || !/^#[0-9a-f]{6}$/i.test(col || '')) return col;
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(col.slice(i, i + 2), 16)); return 0.2126 * r + 0.7152 * g + 0.0722 * b < 60 ? '#f1f5f9' : col;
+}
 function drawStroke(x, st, sel) {
   const w = Math.max(0.8, st.w * S.view.s); const tr = p => toS(p[0], p[1]);
   if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
-  strokePath(x, st.pred && st.pred.length ? st.pts.concat(st.pred) : st.pts, tr, w, st.col); // mentre scrivi l'inchiostro arriva un filo avanti alla punta (punti previsti)
+  strokePath(x, st.pred && st.pred.length ? st.pts.concat(st.pred) : st.pts, tr, w, inkCol(st.col)); // mentre scrivi l'inchiostro arriva un filo avanti alla punta (punti previsti)
 }
 /* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
 const MEAS_COL = '#0e7490';

@@ -6,7 +6,7 @@ const NAT = (() => { // plugin nativi; se qualcosa manca l'app parte lo stesso (
   try {
     const C = window.Capacitor; if (!C || !C.isNativePlatform || !C.isNativePlatform()) return null;
     const plug = n => (typeof C.registerPlugin === 'function' ? C.registerPlugin(n) : C.Plugins && C.Plugins[n]) || null; // registerPlugin arriva da lib/capacitor.js
-    const o = { fs: plug('Filesystem'), share: plug('Share'), app: plug('App') };
+    const o = { fs: plug('Filesystem'), share: plug('Share'), app: plug('App'), bars: (window.capacitorExports && window.capacitorExports.SystemBars) || null };
     return o.fs ? o : null;
   } catch (e) { console.error('plugin nativi', e); return null; }
 })();
@@ -103,8 +103,11 @@ function pwaHomeBanners() {
 }
 function pwaHomeWire() { const e = $('#pwRecover'); if (e) e.onclick = recoverFromFolder; }
 
+function natTheme(dark) { // barra dell'ora e della batteria: scritte chiare sul tema scuro, scure sul chiaro
+  try { if (NAT && NAT.bars) Promise.resolve(NAT.bars.setStyle({ style: dark ? 'DARK' : 'LIGHT' })).catch(() => { }); } catch (e) { }
+}
 async function pwaBoot() {
-  natFixInputs();
+  natFixInputs(); natTheme(isDark());
   try { await Archive.init(); } catch (e) { console.error('archivio', e); }
   const mark = Sync.mark; Sync.mark = function (...k) { mark.apply(this, k); Archive.kick(); }; // dopo ogni modifica, anche nella cartella
   if (NAT && NAT.app) {

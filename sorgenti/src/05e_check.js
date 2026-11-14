@@ -25,8 +25,8 @@ const ROOM_COL = { // riempimento, bordo, testo del nome
   ok: ['rgba(59,130,246,.06)', 'rgba(37,99,235,.75)', '#1e3a8a'],
 };
 const ROOM_DOT = { done: '🟢', warn: '🟠', ok: '🔵' };
-const ROOM_LEGEND = '<span style="color:#c2410c">🟠 manca qualcosa</span> • <span style="color:#1e3a8a">🔵 in lavorazione</span> • <span style="color:#166534">🟢 rilevato</span>';
+const ROOM_LEGEND = '<span style="color:var(--tor)">🟠 manca qualcosa</span> • <span style="color:var(--tbl)">🔵 in lavorazione</span> • <span style="color:var(--tgr)">🟢 rilevato</span>';
 function issuesHtml(r, opt = {}) { // elenco dei motivi per il pannello del locale
-  const iss = roomIssues(r); if (!iss.length) return opt.empty === false ? '' : '<div class="small" style="color:#166534;margin-top:4px">✓ Nessuna segnalazione: foto, punto luce e comandi ci sono.</div>';
-  return `<ul class="small" style="padding-left:18px;margin:4px 0">${iss.map(i => `<li style="color:${i.lvl === 'warn' ? '#c2410c' : '#1e3a8a'}">${esc(i.t)}</li>`).join('')}</ul>`;
+  const iss = roomIssues(r); if (!iss.length) return opt.empty === false ? '' : '<div class="small" style="color:var(--tgr);margin-top:4px">✓ Nessuna segnalazione: foto, punto luce e comandi ci sono.</div>';
+  return `<ul class="small" style="padding-left:18px;margin:4px 0">${iss.map(i => `<li style="color:${i.lvl === 'warn' ? 'var(--tor)' : 'var(--tbl)'}">${esc(i.t)}</li>`).join('')}</ul>`;
 }
