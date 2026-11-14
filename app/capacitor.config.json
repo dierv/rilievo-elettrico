@@ -12,6 +12,27 @@
     "limitsNavigationsToAppBoundDomains": false
   },
   "plugins": {
-    "SystemBars": { "insetsHandling": "native" }
+    "SystemBars": {
+      "insetsHandling": "native"
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "apple.com",
+        "google.com"
+      ]
+    }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "swiftToolsVersion": "6.1",
+        "packageTraits": {
+          "@capacitor-firebase/authentication": [
+            "Google"
+          ]
+        }
+      }
+    }
   }
 }

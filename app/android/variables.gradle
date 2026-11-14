@@ -1,4 +1,5 @@
 ext {
+    rgcfaIncludeGoogle = true   // accesso Google nativo (plugin @capacitor-firebase/authentication)
     minSdkVersion = 24
     compileSdkVersion = 36
     targetSdkVersion = 36

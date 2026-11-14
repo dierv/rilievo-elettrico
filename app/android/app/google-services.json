@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "1009612427289",
+    "project_id": "sopralux-64b29",
+    "storage_bucket": "sopralux-64b29.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1009612427289:android:fc7e362d2ccd00528e5a88",
+        "android_client_info": {
+          "package_name": "it.diervsoft.sopralux"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1009612427289-a9tk2b1giqd9m7s0glpo5lq4opdhjqf5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "it.diervsoft.sopralux",
+            "certificate_hash": "229927aa6b0aef8728a293681fcaf31b7e7f175d"
+          }
+        },
+        {
+          "client_id": "1009612427289-gebm8ja02io5n57odu70ncu57hdg2ls5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "it.diervsoft.sopralux",
+            "certificate_hash": "7006f2837f833dbe5b8b6dca44f247dcd9f1fd0c"
+          }
+        },
+        {
+          "client_id": "1009612427289-7bfgo6b8b4h6uo92o7ejjloddsb5vuij.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4SW27xcB3crbhQ-D3dJVh-ovMocCIBUw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1009612427289-7bfgo6b8b4h6uo92o7ejjloddsb5vuij.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1009612427289-8ssbjl6qppg98tg38vii83mf2p4p2td4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "it.diervsoft.sopralux",
+                "app_store_id": "6834807545"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

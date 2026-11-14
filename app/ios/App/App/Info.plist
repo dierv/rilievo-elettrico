@@ -82,5 +82,16 @@
 	<string>Serve per girare la pianta seguendo come sei orientato nella stanza.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>google-signin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.1009612427289-8ssbjl6qppg98tg38vii83mf2p4p2td4</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
