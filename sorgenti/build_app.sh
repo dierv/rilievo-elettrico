@@ -8,7 +8,7 @@ V=$(date +%Y%m%d-%H%M%S)
 REPO=$(cd .. && pwd)
 mkdir -p "$OUT/lib"
 {
-echo '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>SopraLux</title><meta name="theme-color" content="#1d4ed8"><style>'
+echo '<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>SopraLux</title><meta name="theme-color" content="#1d4ed8"><style>'
 cat src/style.css
 echo '</style></head><body>'
 cat src/body.html
