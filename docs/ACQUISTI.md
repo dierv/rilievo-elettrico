@@ -95,8 +95,8 @@ Fonti: [Android Developers – Test your Google Play Billing Library integration
 ## Interruttore di prova
 
 - In «Piani e sblocchi», nelle sole build di prova, ogni prodotto ha il tasto **Prova**: accende l'acquisto senza passare dallo store. Vale solo su quel dispositivo; «Azzera le prove» riporta alla Base.
-- Build di prova (`APP_CHANNEL=prova`): APK di prova e build iOS automatiche (a ogni modifica). Nella prima schermata c'è scritto «build di prova (non per lo store)».
-- Build per lo store (`APP_CHANNEL=store`): workflow «App Android per Google Play»; per iOS il workflow «App iOS di prova (TestFlight)» **avviato a mano** con canale «store». In App Store Connect va scelta quella build.
+- Build di prova (`APP_CHANNEL=prova`): l'APK di prova (a ogni modifica) e le build iOS avviate a mano con canale «prova». Nella prima schermata c'è scritto «build di prova (non per lo store)».
+- Build per lo store (`APP_CHANNEL=store`): workflow «App Android per Google Play» e, dal 15/11 sera, **tutte le build iOS automatiche** (da TestFlight gli acquisti veri sono già gratuiti, i tasti «Prova» non servono).
 - Su iPad l'interruttore funziona solo nell'ambiente di prova di Apple (TestFlight): una build di prova arrivata per errore nell'App Store non lo mostra.
 - Nelle build per lo store Studio e memoria sono «In arrivo» e non si comprano (`LIC_SOON` in `01b_lic.js`).
 
