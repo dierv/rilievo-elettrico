@@ -65,6 +65,7 @@ Gli stessi 17 codici su Google Play e App Store. **Un codice non si può più ca
 
 **Stato su Google Play (15/11/2026, sera)**
 - Creati e attivi: gli 8 prodotti a pagamento singolo (opzione di acquisto `acquisto`, compatibile con le versioni precedenti) e i 2 abbonamenti Pro (piano base `base`, offerta `prova14` di 14 giorni). Prezzi in Italia controllati: €0,99, €1,99, €2,99, €6,99, €14,99, €149,99.
+- **Provati sul tablet (15/11, sera), con la carta di prova:** acquisto di sblocchi e abbonamento Pro funzionano. I prodotti appena creati sono comparsi nell'app solo dopo 1-3 ore (prima: «Prezzi di Google Play non disponibili»).
 - Non ancora creati: Studio 3, Studio 10 e i pacchetti di memoria (nell'app sono «In arrivo»).
 - Test interno: release 3 (1.0) pubblicata il 15/11; tester = elenco «Tester delle licenze».
 - Firebase: aggiunta l'impronta SHA-1 della chiave di firma di Play (`9F:28:3D:…:C6:D9`) all'app Android, per «Accedi con Google» nella versione scaricata da Play.
