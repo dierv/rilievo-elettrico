@@ -18,6 +18,7 @@ function totTable(items) {
   return `<table class="t"><tr><th></th><th>Sigla</th><th>Descrizione</th><th class="n">Q.tà</th><th>UM</th><th class="n">di cui bozze</th></tr>${ks.map(k => { const s = symOf(kCode(k)); const u = umOf(kCode(k)); return `<tr><td><img src="${symIcon(s, 40)}" width="18"></td><td><b>${esc(kCode(k))}</b></td><td>${esc(kName(k))}</td><td class="n"><b>${itNum(m[k].q, u === 'm' ? 1 : 0)}</b></td><td>${u}</td><td class="n">${m[k].dr ? itNum(m[k].dr, u === 'm' ? 1 : 0) : ''}</td></tr>`; }).join('')}</table>`;
 }
 function openComputo() {
+  if (!Lic.can('computo')) return openExportBase(); // piano Base: tavola con le scritte e backup
   const sv = S.sv; const dr = S.items.filter(i => !i.ok && !i.hint).length;
   const quadri = allQuadri(); const hints = S.items.filter(i => i.hint);
   const crit = S.photos.flatMap(p => ((p.ai && p.ai.crit) || []).map(c => [roomLabel(p.roomId), c]));
@@ -25,6 +26,7 @@ function openComputo() {
     ${dr ? `<div class="banner warn">${dr} elementi sono ancora bozze AI non confermate: sono inclusi ma segnati come "bozza".</div>` : ''}
     <div class="row wrap" style="margin:12px 0"><button class="pri" id="xZip">⬇ Esporta pacchetto ZIP</button><label class="row small" style="flex:none"><input type="checkbox" id="xPh" checked style="width:auto;min-height:0"> includi foto</label>
       <button id="xTsv">Copia tabella per Excel</button><button class="ai" id="xRel" ${canAI() ? '' : 'disabled'}>✦ Relazione stato di fatto</button><button id="xFull">Backup completo (foto e audio)</button><button id="xJson">Backup solo dati</button></div>
+    <div class="row wrap" style="margin:0 0 12px"><span class="small" style="flex:none">La tavola aperta, con quello che c'è sopra:</span>${tavolaBtns()}</div>
     <div class="mut small">Backup completo: un file ZIP con tutto il sopralluogo, da reimportare qui o nell'${PLATFORM === 'pwa' ? 'app in Claude' : 'app installata sul tablet'} (Importa backup).</div>
     ${costLine(sv)}
     <div class="mut small">Lo ZIP contiene: DXF per tavola (blocchi per sigla, layer per categoria, coordinate reali), CSV per Excel (elementi, computo per locale, totali, quadri, foto), PNG della pianta annotata, foto numerate F001… come sul DXF${S.vnotes.length ? ', note audio N1…' : ''}.</div>
@@ -46,9 +48,68 @@ function openComputo() {
     }
     try { await navigator.clipboard.writeText(rows.map(r => r.join('\t')).join('\n')); toast('Tabella copiata: incollala in Excel'); } catch (e) { toast('Copia non consentita qui', true); }
   };
-  b.querySelector('#xJson').onclick = async () => { const data = JSON.stringify({ app: 'rilievo-elettrico', v: 1, survey: S.sv, rooms: S.rooms, items: S.items, draws: S.draws, vnotes: S.vnotes, photos: S.photos.map(cleanPhoto), lib: S.lib }, null, 1); await saveFile(`backup_${safeName(sv.name)}.json`, new Blob([data], { type: 'application/json' })); };
   b.querySelector('#xRel').onclick = () => relazioneAI(b.querySelector('#xRelBox'));
+  wireBackup(b); wireTavola(b);
+}
+function wireBackup(b) { // tasti «Backup completo» e «Backup solo dati»
+  const sv = S.sv;
+  b.querySelector('#xJson').onclick = async () => { const data = JSON.stringify({ app: 'rilievo-elettrico', v: 1, survey: S.sv, rooms: S.rooms, items: S.items, draws: S.draws, vnotes: S.vnotes, photos: S.photos.map(cleanPhoto), lib: S.lib }, null, 1); await saveFile(`backup_${safeName(sv.name)}.json`, new Blob([data], { type: 'application/json' })); };
   b.querySelector('#xFull').onclick = async e => { const bt = e.target; bt.disabled = true; try { const { blob, miss } = await fullBackupZip(m => bt.textContent = m); if (await saveFile(`backup_${safeName(sv.name)}_${new Date().toISOString().slice(0, 10)}.zip`, blob)) { sv.lastBackup = Date.now(); Sync.mark('meta'); } if (miss) toast(`${miss} file non disponibili: non sono nel backup`, true, 6000); } catch (err) { console.error(err); toast('Backup non riuscito: ' + (err.message || err), true, 6000); } bt.disabled = false; bt.textContent = 'Backup completo (foto e audio)'; };
+}
+function wireTavola(b) { // tasti «Tavola: immagine» e «Tavola: PDF»
+  for (const [id, kind, lab] of [['#xPng', 'png', 'Immagine (PNG)'], ['#xPdf', 'pdf', 'PDF']]) {
+    const bt = b.querySelector(id); if (!bt) continue;
+    bt.onclick = async () => { const P = curPlan(); if (!P) return; bt.disabled = true; bt.textContent = 'Preparo…'; try { await exportTavola(P, kind); } catch (err) { console.error(err); toast('Esportazione non riuscita: ' + (err.message || err), true, 6000); } bt.disabled = false; bt.textContent = '⬇ ' + lab; };
+  }
+}
+const tavolaBtns = () => `<button id="xPng" ${curPlan() ? '' : 'disabled'}>⬇ Immagine (PNG)</button><button id="xPdf" ${curPlan() ? '' : 'disabled'}>⬇ PDF</button>`;
+
+/* ---- piano Base: esportazione della tavola con le scritte e backup; computo ed esportazioni DXF/CSV/ZIP negli abbonamenti ---- */
+function openExportBase() {
+  const sv = S.sv, P = curPlan();
+  const b = openModal(`<h3>Esporta – ${esc(sv.name)}</h3>
+    <div class="sech" style="border:none;padding-top:0;margin-top:4px">Tavola con le scritte</div>
+    <div class="mut small">${P ? 'La tavola «' + esc(P.name) + '» con quello che hai scritto e disegnato sopra. Il PDF è un foglio A3.' : 'Apri una tavola per esportarla.'}</div>
+    <div class="row wrap" style="margin-top:8px">${tavolaBtns()}</div>
+    <div class="sech">Backup</div>
+    <div class="mut small">Un file ZIP con tutto il sopralluogo (tavole, scritte, foto e audio), da reimportare con «Importa backup».</div>
+    <div class="row wrap" style="margin-top:8px"><button id="xFull">Backup completo (foto e audio)</button><button id="xJson">Backup solo dati</button></div>
+    <div class="sech"><span class="lkw">${LIC_LOCK}</span> Computo ed esportazioni DXF, CSV e ZIP</div>
+    <div class="mut small">Con gli abbonamenti: computo per locale, DXF per tavola, CSV per Excel e pacchetto ZIP.</div>
+    <div class="row" style="margin-top:8px"><button class="sm" id="xLic" style="flex:none">Piani e sblocchi</button></div>
+    <div class="acts"><button class="pri" onclick="closeModal()">Chiudi</button></div>`);
+  wireBackup(b); wireTavola(b);
+  b.querySelector('#xLic').onclick = () => Lic.open('computo');
+}
+
+/* ---- la sola tavola: la pianta con quello che c'è sopra, senza legenda, in PNG o in un PDF A3 ---- */
+async function tavolaCanvas(P) {
+  const im = await loadPlanImage(P.id, false, true); const c = newCanvas(P.w, P.h); const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, P.w, P.h); x.drawImage(im.canvas, 0, 0);
+  drawPlanOverlay(x, P, photoNumbers());
+  return c;
+}
+async function exportTavola(P, kind) {
+  const c = await tavolaCanvas(P); const name = safeName(S.sv.name) + '_' + safeName(P.name);
+  if (kind === 'png') return saveFile(name + '.png', await canvasToBlob(c, 'image/png'));
+  return saveFile(name + '.pdf', await jpegPdf(await canvasToBlob(c, 'image/jpeg', 0.92), c.width, c.height));
+}
+async function jpegPdf(jpg, w, h) { // PDF di una pagina: foglio A3 (orizzontale o verticale come l'immagine), immagine centrata con 10 mm di margine
+  const land = w >= h, PW = land ? 1190.55 : 841.89, PH = land ? 841.89 : 1190.55, M = 28.35;
+  const s = Math.min((PW - 2 * M) / w, (PH - 2 * M) / h), iw = w * s, ih = h * s, ox = (PW - iw) / 2, oy = (PH - ih) / 2, f = v => (Math.round(v * 100) / 100).toString();
+  const img = new Uint8Array(await jpg.arrayBuffer()); const enc = new TextEncoder(); const parts = [], offs = []; let len = 0;
+  const push = d => { const u = typeof d === 'string' ? enc.encode(d) : d; parts.push(u); len += u.length; };
+  const obj = (n, head, stream) => { offs[n] = len; push(`${n} 0 obj\n${head}\n`); if (stream) { push('stream\n'); push(stream); push('\nendstream\n'); } push('endobj\n'); };
+  push('%PDF-1.4\n'); push(new Uint8Array([37, 226, 227, 207, 211, 10])); // riga binaria: il file non va trattato come testo
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f(PW)} ${f(PH)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
+  obj(4, `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.length} >>`, img);
+  const cont = enc.encode(`q ${f(iw)} 0 0 ${f(ih)} ${f(ox)} ${f(oy)} cm /Im0 Do Q`);
+  obj(5, `<< /Length ${cont.length} >>`, cont);
+  const xref = len; push('xref\n0 6\n0000000000 65535 f \n'); for (let n = 1; n <= 5; n++) push(String(offs[n]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
 }
 
 /* ---- backup completo: dati + piante + foto + audio in un solo ZIP ---- */
@@ -286,9 +347,8 @@ function writeLegGeom(E, owner, L) { // geometria del blocco della legenda (metr
 }
 
 /* ---- PNG annotato ---- */
-async function annotatedPng(P, pnum) {
-  const im = await loadPlanImage(P.id, false, true); const allIts = S.items.filter(i => i.planId === P.id); const its = allIts.filter(i => !i.hint);
-  const LW = Math.round(Math.max(520, P.w * 0.22)); const c = newCanvas(P.w + LW, P.h); const x = c.getContext('2d'); x.drawImage(im.canvas, 0, 0);
+function drawPlanOverlay(x, P, pnum) { // tutto quello che sta sopra la pianta: stanze, scritte a mano, simboli, note, punti delle foto
+  const allIts = S.items.filter(i => i.planId === P.id); const its = allIts.filter(i => !i.hint);
   const k = ppm(P); const R = Math.max(10, 0.18 * k); const fs = Math.max(12, 0.22 * k);
   for (const r of S.rooms.filter(r => r.planId === P.id)) {
     x.beginPath(); r.poly.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.fillStyle = 'rgba(59,130,246,.06)'; x.fill(); x.strokeStyle = 'rgba(59,130,246,.6)'; x.lineWidth = Math.max(1.5, R / 6); x.stroke();
@@ -302,6 +362,12 @@ async function annotatedPng(P, pnum) {
   for (const it of allIts.filter(i => i.hint)) drawHint(x, it.x, it.y, R);
   const vns = S.vnotes.filter(n => n.planId === P.id); for (const n of vns) drawVnMark(x, n.x, n.y, R * 0.75, n, false);
   for (const ph of S.photos.filter(p => p.planId === P.id && p.x != null)) { x.beginPath(); x.arc(ph.x, ph.y, R * .6, 0, 7); x.fillStyle = '#fff'; x.fill(); x.strokeStyle = '#0891b2'; x.lineWidth = R / 5; x.stroke(); x.beginPath(); x.moveTo(ph.x, ph.y); x.lineTo(ph.x + Math.cos(ph.a) * R * 2, ph.y + Math.sin(ph.a) * R * 2); x.stroke(); x.font = `${fs * .75}px sans-serif`; x.fillStyle = '#0891b2'; x.textAlign = 'left'; x.fillText(pnum.get(ph.id) || '', ph.x + R * .8, ph.y + R * 1.4); }
+  return { allIts, its, vns };
+}
+async function annotatedPng(P, pnum) {
+  const im = await loadPlanImage(P.id, false, true);
+  const LW = Math.round(Math.max(520, P.w * 0.22)); const c = newCanvas(P.w + LW, P.h); const x = c.getContext('2d'); x.drawImage(im.canvas, 0, 0);
+  const { allIts, its, vns } = drawPlanOverlay(x, P, pnum);
   // legenda a destra
   const lx = P.w, pad = LW * 0.05, lf = Math.max(14, LW / 26), lh = lf * 1.9;
   x.fillStyle = '#fff'; x.fillRect(lx, 0, LW, P.h); x.strokeStyle = '#333'; x.lineWidth = 2; x.beginPath(); x.moveTo(lx, 0); x.lineTo(lx, P.h); x.stroke();

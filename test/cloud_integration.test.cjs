@@ -173,7 +173,7 @@ async function configured(options = {}) {
   h.context.AI_ERR = {};
   h.context.Rec = { active: false, async start() {} };
   h.context.AIQ = { stop() {} };
-  h.load('01_core.js', 'pwa.js', 'pwa_cloud_engine.js');
+  h.load('01_core.js', '01b_lic.js', 'pwa.js', 'pwa_cloud_engine.js'); // 01b_lic.js: piani e sblocchi (nella PWA tutto aperto)
   if (options.backend) h.context.CloudBackend = options.backend;
   else h.load('pwa_cloud_backend.js');
   h.load('pwa_cloud.js');

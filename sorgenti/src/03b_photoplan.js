@@ -75,6 +75,7 @@ async function photoPlanFlow(file, fromCamera) {
   let bmp; try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) { bmp = await createImageBitmap(file); } // rispetto l'orientamento EXIF della foto
   const L = Math.max(bmp.width, bmp.height), k = Math.min(1, 4096 / L);
   let src = newCanvas(Math.round(bmp.width * k), Math.round(bmp.height * k)); src.getContext('2d').drawImage(bmp, 0, 0, src.width, src.height); bmp.close && bmp.close();
+  if (!Lic.can('tavolafoto')) return { canvas: src, ppm: null, mm: null }; // senza lo sblocco «Tavola da foto» l'immagine entra così com'è
   return new Promise(resolve => {
     const b = openModal('', true); let quad, drag = null, view = { s: 1, ox: 0, oy: 0 }, rot = 0;
     const render = () => {
@@ -137,8 +138,8 @@ async function photoPlanFlow(file, fromCamera) {
 function addPlanMenu() { // nuova tavola: da file o fotografando il disegno
   const b = openModal(`<h3>Nuova tavola</h3>
     <div class="row" style="gap:10px;margin-top:10px"><button class="pri" style="flex:1;min-height:70px;font-size:16px" id="npFile">📁 Da file<br><span class="small" style="font-weight:400">PDF, DXF o immagine</span></button>
-    <button style="flex:1;min-height:70px;font-size:16px" id="npCam">📷 Fotografa il disegno<br><span class="small" style="font-weight:400">poi lo raddrizzi e metti la scala</span></button></div>
+    <button style="flex:1;min-height:70px;font-size:16px" id="npCam"${Lic.can('tavolafoto') ? '' : ' class="lkb"'}>📷 Fotografa il disegno${Lic.lock('tavolafoto')}<br><span class="small" style="font-weight:400">poi lo raddrizzi e metti la scala</span></button></div>
     <div class="acts"><button onclick="closeModal()">Annulla</button></div>`);
   b.querySelector('#npFile').onclick = () => { closeModal(); $('#fPlan').click(); };
-  b.querySelector('#npCam').onclick = () => { closeModal(); $('#fPlanCam').click(); };
+  b.querySelector('#npCam').onclick = () => { closeModal(); if (Lic.need('tavolafoto')) $('#fPlanCam').click(); };
 }

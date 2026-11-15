@@ -5,7 +5,7 @@ const KINDS = { parete: 'Parete', soffitto: 'Puntuale', quadro: 'Quadro', dettag
 const PEN_COLS = ['#111827', '#dc2626', '#2563eb', '#16a34a', '#c026d3', '#0891b2']; const PEN_CN = ['Nero', 'Rosso', 'Blu', 'Verde', 'Magenta', 'Ciano']; const PEN_W = [1.5, 3, 6]; const PEN_WN = ['Sottile', 'Medio', 'Spesso']; const PEN_ER = [16, 32, 64]; // diametri della gomma (px sullo schermo)
 const symOptions = cur => Object.entries(CATS).map(([c, cd]) => `<optgroup label="${esc(cd.n)}">${S.lib.symbols.filter(s => s.cat === c).map(s => `<option value="${esc(s.code)}"${s.code === cur ? ' selected' : ''}>${esc(s.code)} – ${esc(s.name)}</option>`).join('')}</optgroup>`).join('');
 const imgSrc = ph => blobUrl('photo_' + ph.id, ph.asset) || ph.thumb || '';
-const aiChip = ph => ph.kind === 'dettaglio' ? '<span class="chip grey">Riferimento</span>' : ({ none: '<span class="chip grey">Da analizzare</span>', queued: '<span class="chip warn">In coda</span>', run: '<span class="chip warn">Analisi…</span>', done: '<span class="chip ai">Analizzata</span>', err: '<span class="chip bad">Errore</span>' }[ph.aiSt || 'none']);
+const aiChip = ph => !Lic.can('ai') && !(ph.ai && ph.aiSt === 'done') ? '' : ph.kind === 'dettaglio' ? '<span class="chip grey">Riferimento</span>' : ({ none: '<span class="chip grey">Da analizzare</span>', queued: '<span class="chip warn">In coda</span>', run: '<span class="chip warn">Analisi…</span>', done: '<span class="chip ai">Analizzata</span>', err: '<span class="chip bad">Errore</span>' }[ph.aiSt || 'none']);
 function countsByCode(items) {
   const m = {}; for (const it of items) { if (it.hint) continue; for (const { k, q } of itemParts(it)) { m[k] = m[k] || { n: 0, dr: 0, f: {} }; m[k].n += q; if (!it.ok) m[k].dr += q; if (it.fate) m[k].f[it.fate] = (m[k].f[it.fate] || 0) + q; } } return m;
 }
@@ -16,6 +16,7 @@ function countsTable(items) {
   return `<table class="t"><tr><th></th><th>Elemento</th><th class="n">Q.tà</th><th class="n">di cui bozze</th>${anyF ? '<th>Destino</th>' : ''}</tr>${keys.map(k => { const s = symOf(kCode(k)); return `<tr><td><img src="${symIcon(s, 40)}" width="20"></td><td>${esc(symShort(s))} ${esc(kName(k))}</td><td class="n"><b>${m[k].n}</b></td><td class="n">${m[k].dr || ''}</td>${anyF ? `<td class="small">${Object.entries(m[k].f).map(([f, q]) => `<span style="color:${FATE_COL[f]}">${q} ${fateLabel(f).toLowerCase()}</span>`).join(', ')}</td>` : ''}</tr>`; }).join('')}</table>`;
 }
 function aiAvailHtml() {
+  if (!Lic.can('ai')) return ''; // AI negli abbonamenti: nella Base non si propone
   if (PLATFORM === 'pwa' && !CAP.sample) return `<div class="banner warn">Riconoscimento AI spento: inserisci la chiave API in Impostazioni. Puoi comunque rilevare a mano.</div>`;
   if (!CAP.sample) return `<div class="banner warn">AI non disponibile in questa vista: apri l'app da claude.ai (o dall'app Claude) con l'account con cui l'hai creata. Puoi comunque rilevare a mano.</div>`;
   if (!CAP.img) return `<div class="banner warn">Questa vista non può inviare immagini a Claude: riconoscimento automatico non disponibile.</div>`;
@@ -73,17 +74,18 @@ function renderPanel() {
   if (sel && sel.t === 'ext' && planOf(sel.id)) return extPanel(el, planOf(sel.id));
   if (sel && sel.t === 'draw' && drawById(sel.id)) return drawPanel(el, drawById(sel.id));
   if (sel && sel.t === 'vnote' && vnoteById(sel.id)) return vnotePanel(el, vnoteById(sel.id));
-  if (!P) { el.innerHTML = `<h2>${esc(S.sv.name)}</h2><p class="mut">Carica la prima tavola: PDF, DXF (da AutoCAD), un'immagine, oppure fotografa il disegno cartaceo (lo raddrizzi e metti la scala dal formato del foglio).</p><button class="pri" data-act="addPlan" style="width:100%">+ Aggiungi tavola</button>${aiAvailHtml()}`; return; }
+  if (!P) { el.innerHTML = `<h2>${esc(S.sv.name)}</h2><p class="mut">Carica la prima tavola: PDF, DXF (da AutoCAD)${Lic.can('tavolafoto') ? ', un\'immagine, oppure fotografa il disegno cartaceo (lo raddrizzi e metti la scala dal formato del foglio)' : ' o un\'immagine'}.</p><button class="pri" data-act="addPlan" style="width:100%">+ Aggiungi tavola</button>${aiAvailHtml()}`; return; }
   const rooms = S.rooms.filter(r => r.planId === P.id); const all = S.items.filter(i => i.planId === P.id); const its = all.filter(i => !i.hint); const nh = all.length - its.length; const phs = S.photos.filter(p => p.planId === P.id);
   const dr = its.filter(i => !i.ok).length;
   el.innerHTML = `<h2>${esc(P.name)}</h2>
-    <div class="row wrap" style="gap:6px">${P.ppm ? `<span class="chip ok">Scala ok</span>` : `<span class="chip warn">Scala da calibrare</span>`}
-      <span class="chip grey">${rooms.length} locali (${rooms.filter(r => r.done).length} fatti)</span>${(() => { const nw = rooms.filter(r => roomState(r) === 'warn').length; return nw ? `<span class="chip warn">🟠 ${nw} da verificare</span>` : ''; })()}<span class="chip grey">${phs.length} foto</span>${(() => { const nv = S.vnotes.filter(n => n.planId === P.id).length; return nv ? `<span class="chip grey">🎙 ${nv} not${nv === 1 ? 'a' : 'e'}</span>` : ''; })()}<span class="chip grey">${its.length} elementi</span>${dr ? `<span class="chip ai">${dr} bozze AI</span>` : ''}${nh ? `<span class="chip warn">⚠ ${nh} indizi</span>` : ''}</div>
+    ${licPanelHtml()}
+    <div class="row wrap" style="gap:6px">${P.ppm ? `<span class="chip ok">Scala ok</span>` : Lic.can('misura') ? `<span class="chip warn">Scala da calibrare</span>` : ''}
+      ${Lic.can('stanze') || rooms.length ? `<span class="chip grey">${rooms.length} locali (${rooms.filter(r => r.done).length} fatti)</span>` : ''}${(() => { const nw = rooms.filter(r => roomState(r) === 'warn').length; return nw ? `<span class="chip warn">🟠 ${nw} da verificare</span>` : ''; })()}${Lic.can('foto') || phs.length ? `<span class="chip grey">${phs.length} foto</span>` : ''}${(() => { const nv = S.vnotes.filter(n => n.planId === P.id).length; return nv ? `<span class="chip grey">🎙 ${nv} not${nv === 1 ? 'a' : 'e'}</span>` : ''; })()}${Lic.can('simboli') || its.length ? `<span class="chip grey">${its.length} elementi</span>` : ''}${dr ? `<span class="chip ai">${dr} bozze AI</span>` : ''}${nh ? `<span class="chip warn">⚠ ${nh} indizi</span>` : ''}</div>
     ${aiAvailHtml()}
-    ${!P.ppm ? `<button style="width:100%;margin-top:10px" data-act="tool" data-v="cal">Calibra la scala</button>` : ''}
-    ${closureHtml()}
+    ${!P.ppm && Lic.can('misura') ? `<button style="width:100%;margin-top:10px" data-act="tool" data-v="cal">Calibra la scala</button>` : ''}
+    ${Lic.can('controllo') || closedAt() ? closureHtml() : ''}
     <div class="sec"><b>Come si usa</b>
-      <ol class="small mut" style="padding-left:18px;margin:6px 0">
+      <ol class="small mut" style="padding-left:18px;margin:6px 0">${licGuide(`
       <li><b>Stanza</b>: tocca gli angoli del locale (tieni il dito per la lente) e chiudi sul primo punto.</li>
       <li><b>Foto</b>: tocca dove sei, trascina verso dove guardi, scatta. L'AI mette i simboli sulle pareti della stanza, in bozza (viola). Fuori dai locali (facciate, cortili) foto e simboli vanno negli <b>Esterni</b>.</li>
       <li>Controlla, sposta, <b>conferma</b>. Segna il locale come rilevato.</li>
@@ -96,14 +98,14 @@ function renderPanel() {
       <li><b>Riquadro</b>: trascina un riquadro sulle stanze (verso destra quelle tutte dentro, verso sinistra anche quelle toccate), <b>Copia</b>, apri l'altra tavola e <b>Incolla</b>: le trascini dove vanno e confermi. Tra due tavole DXF finiscono già nella stessa posizione del disegno.</li>
       <li><b>Misura</b>: tocca due o più punti (vanno esattamente dove tocchi, senza agganci): distanza per tratto, totale e area se chiudi.</li>
       <li><b>Colori del DXF</b> (interruttore «colori» sopra la rotazione, solo per le tavole DXF): mostra la pianta con i colori di AutoCAD o tutta in nero. Per una tavola importata prima, il primo tocco chiede lo stesso file DXF e aggiunge i colori senza spostare niente.</li>
-      <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li></ol></div>
-    <div class="sec"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:var(--tor)">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>'}${extRow(P)}</div>${S.clip ? `<div class="row" style="margin-top:8px"><button class="sm pri" data-act="pasteRooms">📋 Incolla ${S.clip.rooms.length} ${S.clip.rooms.length === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}</div>
-    <div class="sec"><b>Visualizza</b>
-      <div class="row wrap" style="margin-top:6px"><label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
-      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
-      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="hints" ${ST().hints !== false ? 'checked' : ''}> indizi</label>
-      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="labels" ${ST().labels ? 'checked' : ''}> sigle</label>
-      <label class="row small" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="quickBar" ${ST().quickBar !== false ? 'checked' : ''}> barra simboli più usati</label></div></div>`;
+      <li><b>Rotazione</b> (tasto in basso a destra, o due dita che torcono): gira la pianta come sei messo tu; con <b>Segui come sono girato</b> ruota da sola quando ti giri (giroscopio) e il cono della foto parte verso dove guardi. Se si sfasa, raddrizzala: da lì riparte.</li>`)}</ol></div>
+    <div class="sec${Lic.can('stanze') || rooms.length || all.length || phs.length ? '' : ' hide'}"><b>Locali</b><div class="dlist">${rooms.length ? rooms.map(r => { const n = S.items.filter(i => i.roomId === r.id && !i.hint); const nd = n.filter(i => !i.ok).length; const st = roomState(r); const w = roomIssues(r).find(i => i.lvl === 'warn'); return `<div class="drow" data-act="goRoom" data-id="${r.id}"><span style="font-size:18px">${ROOM_DOT[st]}</span><div class="g"><div><b>${esc(r.name)}</b></div><div class="mut small">${S.photos.filter(p => p.roomId === r.id).length} foto • ${n.length} elementi${nd ? ` • <span style="color:var(--ai)">${nd} bozze</span>` : ''}${w && st !== 'done' ? ` • <span style="color:var(--tor)">${esc(w.t)}</span>` : ''}</div></div></div>`; }).join('') : Lic.can('stanze') ? '<div class="mut small">Nessun locale. Usa lo strumento Stanza.</div>' : ''}${extRow(P)}</div>${S.clip ? `<div class="row" style="margin-top:8px"><button class="sm pri" data-act="pasteRooms">📋 Incolla ${S.clip.rooms.length} ${S.clip.rooms.length === 1 ? 'stanza copiata' : 'stanze copiate'}</button></div>` : ''}</div>
+    <div class="sec${Lic.can('foto') || Lic.can('simboli') || phs.length || all.length ? '' : ' hide'}"><b>Visualizza</b>
+      <div class="row wrap" style="margin-top:6px"><label class="row small${Lic.can('foto') || phs.length ? '' : ' hide'}" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="cones" ${ST().cones ? 'checked' : ''}> coni foto</label>
+      <label class="row small${Lic.can('ai') || dr ? '' : ' hide'}" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="drafts" ${ST().drafts ? 'checked' : ''}> bozze AI</label>
+      <label class="row small${Lic.can('ai') || nh ? '' : ' hide'}" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="hints" ${ST().hints !== false ? 'checked' : ''}> indizi</label>
+      <label class="row small${Lic.can('simboli') || its.length ? '' : ' hide'}" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="labels" ${ST().labels ? 'checked' : ''}> sigle</label>
+      <label class="row small${Lic.can('simboli') ? '' : ' hide'}" style="flex:none"><input type="checkbox" style="width:auto;min-height:0" data-set="quickBar" ${ST().quickBar !== false ? 'checked' : ''}> barra simboli più usati</label></div></div>`;
 }
 const EXT_ICON = '🌳';
 function extRow(P) { // riga «Esterni» in fondo all'elenco dei locali
@@ -147,7 +149,7 @@ function roomPanel(el, r) {
 }
 function photoPanel(el, ph) {
   const all = S.items.filter(i => i.photoId === ph.id); const its = all.filter(i => !i.hint); const ai = ph.ai || {};
-  const canAI = CAP.sample && CAP.img && !CAP.aiOff && ph.kind !== 'dettaglio';
+  const canAI = CAP.sample && CAP.img && !CAP.aiOff && Lic.can('ai') && ph.kind !== 'dettaglio';
   const att = ph.itemId ? itemById(ph.itemId) : null;
   el.innerHTML = `<h2>Foto ${aiChip(ph)}</h2>
     <img src="${esc(imgSrc(ph))}" data-act="view" data-id="${ph.id}" style="width:100%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;background:#ddd;max-height:260px;object-fit:contain">
@@ -174,7 +176,7 @@ function photoPanel(el, ph) {
 function drawPanel(el, d) {
   const cols = [...new Set(d.strokes.map(s => s.col))];
   el.innerHTML = `<h2>✎ Disegno a mano</h2><div class="mut small">${d.strokes.length} tratt${d.strokes.length === 1 ? 'o' : 'i'} • trascinalo sulla pianta per spostarlo</div>
-    <label class="f">Colore</label><div class="row wrap" style="gap:8px">${PEN_COLS.map(c => `<button class="sw${cols.length === 1 && cols[0] === c ? ' on' : ''}" data-act="drawCol" data-v="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>
+    <label class="f">Colore</label><div class="row wrap" style="gap:8px">${PEN_COLS.map(c => `<button class="sw${cols.length === 1 && cols[0] === c ? ' on' : ''}${licPenCol(c) ? '' : ' lk'}" data-act="drawCol" data-v="${c}" style="background:${c}" title="${c}">${licPenCol(c) ? '' : LIC_LOCK}</button>`).join('')}</div>
     <div class="sec row"><button class="sm danger" data-act="delDraw">Elimina disegno</button><button class="sm ghost" data-act="desel">Chiudi</button></div>`;
 }
 function hintList(hints) {
@@ -239,6 +241,7 @@ function initPanel() {
     const it = sel && sel.t === 'item' ? itemById(sel.id) : null, ph = sel && sel.t === 'photo' ? photoById(sel.id) : null, rm = sel && sel.t === 'room' ? roomById(sel.id) : sel && sel.t === 'ext' ? { id: null, planId: sel.id, ext: true } : null;
     switch (a) {
       case 'addPlan': addPlanMenu(); break;
+      case 'lic': Lic.open(); break;
       case 'tool': setTool(v); break;
       case 'desel': select(null); break;
       case 'goRoom': { const r = roomById(id); select('room', id); centerOn(...polyCentroid(r.poly)); break; }
@@ -261,10 +264,10 @@ function initPanel() {
       case 'pasteCancel': S.tmp = {}; updateHint(); renderPanel(); redraw(); break;
       case 'manCancel': setTool('sel'); break;
       case 'fate': if (it) { pushUndo(); if (v) it.fate = v; else delete it.fate; Sync.markItem(it); renderPanel(); redraw(); } break;
-      case 'genCheck': openGeneralCheck(); break;
+      case 'genCheck': if (Lic.need('controllo')) openGeneralCheck(); break;
       case 'showClosure': S.showClosure = !!b.checked; redraw(); break;
       case 'reopen': await reopenSurvey(); break;
-      case 'expClosure': { b.disabled = true; try { await withClosureData(() => exportZip(false, m => b.textContent = m, 'stato_di_fatto')); } catch (err) { console.error(err); toast('Errore export: ' + (err.message || err), true, 6000); } b.disabled = false; b.textContent = 'Esporta stato di fatto'; break; }
+      case 'expClosure': { if (!Lic.need('computo')) break; b.disabled = true; try { await withClosureData(() => exportZip(false, m => b.textContent = m, 'stato_di_fatto')); } catch (err) { console.error(err); toast('Errore export: ' + (err.message || err), true, 6000); } b.disabled = false; b.textContent = 'Esporta stato di fatto'; break; }
       case 'roomDone': { // se manca qualcosa lo dice prima di segnare il locale come rilevato
         if (!rm.done) { const w = roomIssues(rm).filter(i => i.lvl === 'warn'); if (w.length) { const a = await askChoice('In questo locale manca qualcosa', [['no', 'Torna al locale'], ['si', 'Segna rilevato lo stesso']], w.map(i => i.t).join(' • ')); if (a !== 'si') break; } }
         rm.done = !rm.done; Sync.mark('plan:' + rm.planId); renderPanel(); redraw(); break; }
@@ -289,7 +292,7 @@ function initPanel() {
       case 'confirmItem': pushUndo(); it.ok = true; Sync.markItem(it); renderPanel(); redraw(); break;
       case 'nMinus': case 'nPlus': pushUndo(); it.n = Math.max(1, (it.n || 1) + (a === 'nPlus' ? 1 : -1)); Sync.markItem(it); renderPanel(); redraw(); break;
       case 'viewDet': openViewer(it.photoId, it.d); break;
-      case 'drawCol': { const d = drawById(sel.id); if (!d) break; pushUndo(); d.strokes.forEach(st => st.col = v); Sync.mark('plan:' + d.planId); renderPanel(); redraw(); break; }
+      case 'drawCol': { const d = drawById(sel.id); if (!d) break; if (!licPenCol(v)) { Lic.open('penne'); break; } pushUndo(); d.strokes.forEach(st => st.col = v); Sync.mark('plan:' + d.planId); renderPanel(); redraw(); break; }
       case 'delDraw': { const d = drawById(sel.id); if (!d) break; pushUndo(); S.draws = S.draws.filter(x => x !== d); Sync.mark('plan:' + d.planId); select(null); break; }
       case 'viewSrc': openViewer(id, v === '' ? null : +v); break;
       case 'split': { pushUndo(); const n = splitItem(it); toast(n ? `Separato: ${n + 1} oggetti, uno per foto` : 'Niente da separare'); renderPanel(); redraw(); break; }
@@ -356,18 +359,21 @@ function deletePhoto(ph) {
 /* ============ TAVOLOZZA SIMBOLI ============ */
 function renderPenBar(p) {
   const d = S.penDraw && drawById(S.penDraw); const n = d ? d.strokes.length : 0;
-  p.innerHTML = PEN_COLS.map((c, i) => `<button class="sw${S.pen.col === c ? ' on' : ''}" data-pc="${c}" style="background:${c}" title="${PEN_CN[i]}"></button>`).join('') +
-    `<label class="sw swc${PEN_COLS.includes(S.pen.col) ? '' : ' on'}" title="Altro colore" style="${PEN_COLS.includes(S.pen.col) ? '' : 'background:' + S.pen.col}"><input type="color" id="penCol" value="${S.pen.col}"></label>` +
-    (S.pen.erase ? '' : PEN_W.map((w, i) => `<button class="pw${S.pen.w === w ? ' on' : ''}" data-pw="${w}" title="${PEN_WN[i]}"><span style="height:${w}px;background:${S.pen.col}"></span></button>`).join('')) +
+  const more = Lic.can('penne'); // Base: nero, rosso, blu e tratto medio; il resto con «Penne in più»
+  p.innerHTML = PEN_COLS.map((c, i) => `<button class="sw${S.pen.col === c ? ' on' : ''}${licPenCol(c) ? '' : ' lk'}" data-pc="${c}" style="background:${c}" title="${PEN_CN[i]}">${licPenCol(c) ? '' : LIC_LOCK}</button>`).join('') +
+    (more ? `<label class="sw swc${PEN_COLS.includes(S.pen.col) ? '' : ' on'}" title="Altro colore" style="${PEN_COLS.includes(S.pen.col) ? '' : 'background:' + S.pen.col}"><input type="color" id="penCol" value="${S.pen.col}"></label>`
+      : `<button class="sw swc lk" data-pcx="1" title="Altro colore">${LIC_LOCK}</button>`) +
+    (S.pen.erase ? '' : PEN_W.map((w, i) => `<button class="pw${S.pen.w === w ? ' on' : ''}${licPenW(w) ? '' : ' lk'}" data-pw="${w}" title="${PEN_WN[i]}"><span style="height:${w}px;background:${S.pen.col}"></span>${licPenW(w) ? '' : LIC_LOCK}</button>`).join('')) +
     (S.pen.erase ? PEN_ER.map(z => `<button class="pw${S.pen.er === z ? ' on' : ''}" data-pz="${z}" title="Gomma di ${z} px"><span style="width:${Math.round(z / 2.6)}px;height:${Math.round(z / 2.6)}px;border-radius:50%;background:#94a3b8"></span></button>`).join('') : '') +
     `<button class="sm pe${S.pen.erase ? ' on' : ''}" data-pe="1" style="flex:none" title="Gomma: cancella dove passi"><svg viewBox="0 0 24 24" width="18" height="18" style="vertical-align:-4px"><path d="M16.2 3.8l4 4a1.5 1.5 0 0 1 0 2.1L11 19H6.5l-3.2-3.2a1.5 1.5 0 0 1 0-2.1l10.8-9.9a1.5 1.5 0 0 1 2.1 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 11l6 6M11 19h9" stroke="currentColor" stroke-width="1.8"/></svg> Gomma</button>` +
     `<button class="sm" data-pu="1" ${n ? '' : 'disabled'} style="flex:none" title="Togli l'ultimo tratto">↶ Indietro</button><button class="sm okb" data-pf="1" style="flex:none">Fine</button>`;
   const write = () => { S.pen.erase = false; S.tmp.er = null; updateHint(); }; // colore o spessore: si torna a scrivere
-  p.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { S.pen.col = b.dataset.pc; write(); renderPalette(); redraw(); });
-  p.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { S.pen.w = +b.dataset.pw; write(); renderPalette(); redraw(); });
+  p.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { if (!licPenCol(b.dataset.pc)) { Lic.open('penne'); return; } S.pen.col = b.dataset.pc; write(); renderPalette(); redraw(); });
+  p.querySelectorAll('[data-pw]').forEach(b => b.onclick = () => { if (!licPenW(+b.dataset.pw)) { Lic.open('penne'); return; } S.pen.w = +b.dataset.pw; write(); renderPalette(); redraw(); });
+  if (!more) p.querySelector('[data-pcx]').onclick = () => Lic.open('penne');
   p.querySelectorAll('[data-pz]').forEach(b => b.onclick = () => { S.pen.er = +b.dataset.pz; renderPalette(); });
   p.querySelector('[data-pe]').onclick = () => { S.pen.erase = !S.pen.erase; if (!S.pen.erase) S.tmp.er = null; updateHint(); renderPalette(); redraw(); };
-  const ci = p.querySelector('#penCol'); ci.oninput = ci.onchange = () => { S.pen.col = ci.value; write(); renderPalette(); };
+  const ci = p.querySelector('#penCol'); if (ci) ci.oninput = ci.onchange = () => { S.pen.col = ci.value; write(); renderPalette(); };
   p.querySelector('[data-pu]').onclick = () => { const d2 = S.penDraw && drawById(S.penDraw); if (!d2) return; pushUndo(); d2.strokes.pop(); if (!d2.strokes.length) { S.draws = S.draws.filter(x => x !== d2); S.penDraw = null; } Sync.mark('plan:' + d2.planId); renderPalette(); redraw(); };
   p.querySelector('[data-pf]').onclick = () => { const id = S.penDraw; setTool('sel'); if (id && drawById(id)) select('draw', id); };
 }
@@ -382,7 +388,7 @@ function palH() { // le barre in basso (zoom, rotazione) stanno sopra la tavoloz
 function renderPalette0() {
   const p = $('#palette'); const oldStrip = p.querySelector('#palStrip'); const keep = oldStrip && !p.classList.contains('hide') && p.classList.contains('two') && oldStrip.dataset.mode === (S.palSearch ? 'q' : 'g') ? oldStrip.scrollLeft : null; // letto prima di cambiare l'aspetto della barra
   p.classList.remove('two'); if (S.tool === 'pen') { p.classList.remove('hide'); renderPenBar(p); return; }
-  if (S.tool === 'sel' && ST().quickBar !== false && curPlan()) { // barra rapida: i simboli più usati, un tocco e sei già con il simbolo in mano
+  if (S.tool === 'sel' && ST().quickBar !== false && curPlan() && Lic.can('simboli')) { // barra rapida: i simboli più usati, un tocco e sei già con il simbolo in mano
     const qs = quickSyms(8); if (!qs.length) { p.classList.add('hide'); return; }
     p.classList.remove('hide');
     p.innerHTML = `<span class="pcat">Più usati</span>${qs.map(s => symChip(s, false)).join('')}<button class="sm" data-all="1" style="flex:none">Tutti i simboli…</button>`;
@@ -520,6 +526,7 @@ function initViewer() {
 
 /* ============ LIBRERIA SIMBOLI ============ */
 function openLibrary() {
+  if (!Lic.need('simboli')) return; // simboli e legenda: negli abbonamenti
   const b = openModal(`<h3>Libreria simboli</h3>
     <div class="mut small">Sono i simboli della tua legenda (${S.lib.symbols.filter(s => s.leg).length}): disegno e nome blocco come nel tuo DXF. Puoi cambiare descrizione, categoria, posa e se l'AI li usa; puoi aggiungerne di tuoi.</div>
     <div id="libL" class="dlist" style="margin-top:10px"></div>
@@ -582,10 +589,10 @@ async function openSettings() {
     <div class="row"><div style="flex:.5"><label class="f">Dimensione simboli (px)</label><input id="tSym" type="number" value="${st.symPx}"></div></div>
     <label class="row small"><input type="checkbox" id="tPen" style="width:auto;min-height:0" ${st.penOnly !== false ? 'checked' : ''}> Con la penna (Apple Pencil, S Pen…): la penna disegna e posiziona, le dita spostano soltanto la pianta e il palmo non lascia segni</label>
     <div class="row small" style="gap:10px;align-items:center"><span class="mut" style="flex:1">Se un tratto della penna non compare: scrivi di nuovo, poi copia il registro della penna e mandalo all'assistenza.</span><button class="sm" id="tPenLog" style="flex:none">Copia registro penna</button></div>
-    <div class="sech">Foto e locali</div>
+    <div class="${Lic.can('foto') || Lic.can('stanze') ? '' : 'hide'}"><div class="sech">Foto e locali</div>
     <div class="row"><div><label class="f">Campo visivo fotocamera (°)</label><input id="tFov" type="number" value="${st.fov}"></div><div><label class="f">Altezza tablet (m)</label><input id="tCam" type="number" step="0.05" value="${st.camH}"></div><div><label class="f">Altezza locali default (m)</label><input id="tH" type="number" step="0.05" value="${st.roomH}"></div></div>
-    <div class="mut small">Campo visivo: lato lungo della foto. Taratura: fotografa in orizzontale una parete da 2 m di distanza e misura quanti metri entrano nella foto (L): FOV = 2·atan(L/4).</div>
-    <details class="setai" id="tAiBox"${hasKey ? ' open' : ''}><summary>Intelligenza artificiale <span class="mut small">(facoltativa)</span></summary>
+    <div class="mut small">Campo visivo: lato lungo della foto. Taratura: fotografa in orizzontale una parete da 2 m di distanza e misura quanti metri entrano nella foto (L): FOV = 2·atan(L/4).</div></div>
+    <details class="setai${Lic.can('ai') ? '' : ' hide'}" id="tAiBox"${hasKey ? ' open' : ''}><summary>Intelligenza artificiale <span class="mut small">(facoltativa)</span></summary>
     ${PLATFORM === 'pwa' ? pwaAiHtml() : ''}
     <label class="f">Riconoscimento AI</label>
     <div class="row"><select id="tTier"><option value="quick">Veloce (meno preciso)</option><option value="default">Standard (consigliato)</option><option value="complex">Massima precisione (più lento)</option></select>
@@ -596,6 +603,7 @@ async function openSettings() {
     <div class="acts"><button onclick="closeModal()">Annulla</button><button class="pri" id="tOk">Salva</button></div>`);
   b.querySelectorAll('#tTheme button').forEach(x => x.onclick = () => { b.querySelectorAll('#tTheme button').forEach(y => y.classList.toggle('on', y === x)); UIP.set('theme', x.dataset.v); applyTheme(); });
   b.querySelectorAll('#tDxfBg button').forEach(x => x.onclick = async () => {
+    if (x.dataset.v !== 'w' && !Lic.need('dxf')) return; // grigio e nero: con «Colori del DXF»
     b.querySelectorAll('#tDxfBg button').forEach(y => y.classList.toggle('on', y === x)); UIP.set('dxfBg', x.dataset.v);
     const P = curPlan(); if (P && planIsDxf(P)) { try { await loadPlanImage(P.id, true); } catch (e) { } redraw(); }
   });

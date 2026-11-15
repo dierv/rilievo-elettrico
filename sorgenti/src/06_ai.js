@@ -7,7 +7,7 @@ async function compressImage(file, max = 2048, q = 0.85) {
   const tk = Math.min(1, 200 / Math.max(c.width, c.height)); const t = newCanvas(Math.round(c.width * tk), Math.round(c.height * tk), false); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
   return { blob, w: c.width, h: c.height, thumb: t.toDataURL('image/jpeg', 0.6) };
 }
-const canAI = () => CAP.sample && CAP.img && !CAP.aiOff;
+const canAI = () => CAP.sample && CAP.img && !CAP.aiOff && Lic.can('ai');
 async function addPhotos(files, pose) {
   const P = curPlan(); if (!P) return; let last = null;
   const att = pose.itemId ? itemById(pose.itemId) : null;

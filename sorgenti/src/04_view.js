@@ -480,11 +480,14 @@ const PEN_HINTS = { // quando si usa la penna
   pen: 'Disegna con la penna: più premi, più il tratto è spesso • il dito sposta la pianta • "Fine" per tornare alla freccia',
   erase: 'Gomma: passa con la penna sopra le scritte per cancellarle • il dito sposta la pianta • tocca un colore per tornare a scrivere',
 };
+const TOOL_LIC = { room: 'stanze', box: 'stanze', photo: 'foto', sym: 'simboli', vnote: 'audio', meas: 'misura', cal: 'misura' }; // strumento -> funzione di «Piani e sblocchi» (01b_lic.js)
 function renderTools() {
-  $('#tools').innerHTML = TOOLS.map(([t, n]) => `<button class="tbtn${S.tool === t ? ' on' : ''}" data-t="${t}"><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${n}</button>`).join('');
+  $('#tools').innerHTML = TOOLS.map(([t, n]) => { const lk = TOOL_LIC[t] && !Lic.can(TOOL_LIC[t]); return `<button class="tbtn${S.tool === t ? ' on' : ''}${lk ? ' lk' : ''}" data-t="${t}"${lk ? ' title="Da sbloccare"' : ''}><svg viewBox="0 0 24 24">${ICONS[t]}</svg>${n}${lk ? LIC_LOCK : ''}</button>`; }).join('');
   $('#tools').querySelectorAll('[data-t]').forEach(b => b.onclick = () => setTool(b.dataset.t));
 }
 function setTool(t) {
+  if (TOOL_LIC[t] && !Lic.need(TOOL_LIC[t])) return; // strumento da sbloccare: si apre «Piani e sblocchi»
+  if (t === 'pen') licPenFix();
   if (t !== 'room') S.redrawRoom = null;
   if (t !== 'box' && S.sel && S.sel.t === 'rooms') S.sel = null; // la scelta multipla vive solo nel Riquadro
   S.tool = t; S.tmp = {}; S.hover = null; S.loupe = null;

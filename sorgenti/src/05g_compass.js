@@ -92,13 +92,13 @@ function renderRotPanel() {
     <input type="range" min="-180" max="180" step="1" value="${deg}" data-r="slider">
     <div class="row" style="gap:6px;margin-top:4px"><button class="sm" data-r="-90">⟲ 90°</button><button class="sm" data-r="0">Dritta</button><button class="sm" data-r="90">⟳ 90°</button></div>
     <div class="mut small" style="margin-top:6px">${Compass.on ? 'Se la pianta si sfasa, raddrizzala col cursore, i tasti o torcendo con due dita: da lì riparte a seguirti.' : 'Gira la pianta finché corrisponde a come sei messo tu (anche con due dita, torcendo). Poi attiva «Segui»: quando ti giri, la pianta gira con te e il cono della foto parte verso dove guardi.'}</div>
-    <button class="${Compass.on ? 'pri' : ''}" style="width:100%;margin-top:8px" data-r="follow">${Compass.on ? '◉ Segui come sono girato: attivo (tocca per spegnere)' : '○ Segui come sono girato'}</button>
+    <button class="${Compass.on ? 'pri' : ''}${Lic.can('bussola') ? '' : ' lkb'}" style="width:100%;margin-top:8px" data-r="follow">${Compass.on ? '◉ Segui come sono girato: attivo (tocca per spegnere)' : '○ Segui come sono girato'}${Lic.lock('bussola')}</button>
     <div class="small ${['denied', 'noSensor', 'noData'].includes(Compass.status) ? 'warn' : 'mut'}" style="margin-top:4px">Sensori: ${ROT_STATUS[Compass.status] || Compass.status}${src}</div>`;
   p.querySelector('[data-r=slider]').oninput = e => { setViewRot(+e.target.value * Math.PI / 180); Compass.anchor(); };
   p.querySelectorAll('button[data-r]').forEach(b => b.onclick = async () => {
     const v = b.dataset.r;
     if (v === 'x') { p.classList.add('hide'); return; }
-    if (v === 'follow') { if (Compass.on) Compass.stop(); else { if (!await Compass.start()) renderRotPanel(); } return; }
+    if (v === 'follow') { if (Compass.on) Compass.stop(); else if (Lic.need('bussola')) { if (!await Compass.start()) renderRotPanel(); } return; }
     if (v === '0') setViewRot(0); else setViewRot(vr() + (+v) * Math.PI / 180);
     Compass.anchor(); renderRotPanel();
   });

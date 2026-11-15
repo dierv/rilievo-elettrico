@@ -1,5 +1,6 @@
-# App Android di prova (SopraLux, versione gratis): a ogni modifica dei sorgenti costruisce l'APK
+# App Android di prova (SopraLux): a ogni modifica dei sorgenti costruisce l'APK
 # e lo mette nella release «app-prova» del repository, da scaricare e installare sul tablet.
+# È una build di prova (APP_CHANNEL=prova): in «Piani e sblocchi» gli acquisti si possono anche simulare.
 name: App Android di prova
 on:
   push:
@@ -27,7 +28,7 @@ jobs:
         working-directory: app
         run: npm ci --no-audit --no-fund
       - name: App (pagina unica)
-        run: TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
+        run: APP_CHANNEL=prova TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www   # build di prova: acquisti anche simulati (mai nel pacchetto per Google Play)
       - name: Capacitor
         working-directory: app
         run: npx cap sync android

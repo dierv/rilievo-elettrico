@@ -91,11 +91,14 @@ La stessa app esiste anche dentro Claude: lì l'AI è compresa nell'abbonamento,
 - `sh build_pwa.sh ..` (lanciato da `sorgenti/`) rigenera l'app pubblicata qui;
 - `sh build.sh` crea la versione per Claude.
 
-## App per Android e iOS (SopraLux, versione gratis)
+## App per Android e iOS (SopraLux)
 
 - Cartella `app/`: progetto Capacitor che impacchetta la stessa app. Si costruisce con `sh sorgenti/build_app.sh ../app/www`, poi `cd app && npm ci && npx cap sync`.
-- Versione gratis: tutto resta sul dispositivo, niente account né sincronizzazione. Archivio automatico nella cartella **Documenti/SopraLux** (su iPad: app File → Sul mio iPad → SopraLux). I file esportati si salvano lì e si possono condividere.
+- **Piani e sblocchi** (solo in questa app; nella versione installabile dal browser e in Claude è tutto aperto): Base gratis con la sola penna, sblocchi singoli pagati una volta, abbonamenti Pro e Studio. Gli acquisti passano da Google Play e App Store (plugin `@capgo/native-purchases`). Codici dei prodotti, come si provano e che cosa manca: [docs/ACQUISTI.md](docs/ACQUISTI.md).
+- **Build di prova e build per lo store:** `APP_CHANNEL=prova` (APK di prova e TestFlight automatici: gli acquisti si possono anche simulare) oppure `APP_CHANNEL=store` (pacchetto per Google Play; build iOS avviata a mano con canale «store»).
+- Tutto resta sul dispositivo, niente sincronizzazione. Archivio automatico nella cartella **Documenti/SopraLux** (su iPad: app File → Sul mio iPad → SopraLux). I file esportati si salvano lì e si possono condividere.
 - `sorgenti/src/native.js` contiene le differenze rispetto alla PWA (archivio, salvataggio dei file, tasto Indietro di Android).
+- **Prove automatiche degli acquisti:** `python3 test/t45_acquisti.py` (app nel browser con un Capacitor finto).
 - **APK di prova:** a ogni modifica GitHub lo costruisce (`.github/workflows/app-android.yml`) e lo mette nella release «app-prova» del repository. La chiave `app/android/app/prova.keystore` serve solo per le prove: la chiave per Google Play resterà fuori dal repository.
 - **App iOS di prova su TestFlight:** a ogni modifica GitHub costruisce l'app su un Mac (`.github/workflows/app-ios.yml`) e la carica su TestFlight; i tester del gruppo «Interno» la ricevono da soli. La firma usa un certificato e un profilo temporanei creati con la chiave API di App Store Connect e revocati a fine build (`app/ios/ci_signing.rb`). Secret del repository: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`. Team Apple `4T9977N43U`, app `it.diervsoft.sopralux`.
 

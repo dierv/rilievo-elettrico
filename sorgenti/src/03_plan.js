@@ -259,15 +259,16 @@ async function addPlan({ name, src, canvas, ppm: ppmV, dxf, srcName, jpeg = fals
   setPlanImage(id, canvas);
   Sync.mark('meta', 'plan:' + id);
   switchPlan(id);
-  if (!plan.ppm) { setTool('cal'); toast('Calibra la scala: tocca due punti di cui conosci la distanza (es. una quota).', false, 6000); }
-  else { setTool('sel'); toast('Tavola importata. Ora disegna la prima stanza con "Stanza".', false, 5000); }
+  if (!plan.ppm && Lic.can('misura')) { setTool('cal'); toast('Calibra la scala: tocca due punti di cui conosci la distanza (es. una quota).', false, 6000); }
+  else { setTool('sel'); toast(Lic.can('stanze') ? 'Tavola importata. Ora disegna la prima stanza con "Stanza".' : 'Tavola importata. Scrivi sulla tavola con la Penna.', false, 5000); }
 }
 
 /* ---- immagine della tavola ---- */
-const dxfColOn = P => !!(P && P.dxfCol && ST().dxfCol); // tavola DXF mostrata con i colori originali
+const dxfColWanted = () => !!ST().dxfCol && Lic.can('dxf'); // colori del DXF: scelta dell'utente, se lo sblocco c'è
+const dxfColOn = P => !!(P && P.dxfCol && dxfColWanted()); // tavola DXF mostrata con i colori originali
 function setPlanImage(pid, canvas, clean = false) {
   const w = canvas.width, h = canvas.height; const P = planOf(pid);
-  if (P && P.dxfCol && !ST().dxfCol) toMono(canvas); // il file resta a colori: in bianco e nero solo la copia mostrata
+  if (P && P.dxfCol && !dxfColWanted()) toMono(canvas); // il file resta a colori: in bianco e nero solo la copia mostrata
   const dark = !clean && planIsDxf(P) && dxfBg() !== 'w'; // fondo scuro solo sullo schermo: esportazioni sempre su bianco
   // riquadro della parte disegnata (per inquadrare solo il disegno, non i bordi bianchi del foglio)
   const k = Math.max(1, Math.ceil(Math.max(w, h) / 900)); const sw = Math.floor(w / k), sh = Math.floor(h / k);
@@ -288,6 +289,7 @@ async function loadPlanImage(pid, force = false, clean = false) {
 }
 async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica l'immagine della tavola, la vista resta
   const P = curPlan(); if (!P || !(P.dxfCol || P.dxf)) return;
+  if (!Lic.need('dxf')) return; // colori del DXF da sbloccare
   if (!P.dxfCol) return addDxfColors(P); // tavola DXF importata prima: si aggiungono i colori rileggendo il file
   ST().dxfCol = !ST().dxfCol; Sync.mark('lib'); colBtnUpdate();
   try { await loadPlanImage(P.id, true); } catch (e) { toast('Planimetria non disponibile: ' + (e.message || e), true); }
@@ -295,6 +297,6 @@ async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica 
 }
 function colBtnUpdate() {
   const b = $('#zCol'); if (!b) return; const P = curPlan();
-  b.classList.toggle('hide', !(P && (P.dxfCol || P.dxf))); b.classList.toggle('on', dxfColOn(P));
+  b.classList.toggle('hide', !(P && (P.dxfCol || P.dxf))); b.classList.toggle('on', dxfColOn(P)); b.classList.toggle('lk', !Lic.can('dxf'));
   b.title = !P || !P.dxfCol ? 'Colori del DXF: tocca per aggiungerli (scegli lo stesso file DXF)' : dxfColOn(P) ? 'Colori del DXF: accesi (tocca per tutto nero)' : 'Colori del DXF: spenti (tocca per vederli)';
 }

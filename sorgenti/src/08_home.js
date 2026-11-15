@@ -32,6 +32,7 @@ async function loadSurveyList() {
 }
 function renderHome() {
   $('#home').classList.remove('hide'); $('#sv').classList.add('hide');
+  $('#hLib').classList.toggle('hide', !Lic.can('simboli')); // libreria dei simboli: negli abbonamenti
   const ban = [];
   if (PLATFORM === 'pwa') ban.push(...pwaHomeBanners());
   else if (!CAP.db) ban.push(`<div class="banner warn">Archivio online non disponibile in questa vista: i sopralluoghi restano solo in questo browser. Apri l'app da Claude per salvarli sul tuo account.</div>`);
@@ -39,7 +40,7 @@ function renderHome() {
   if (CAP.db && !canAI()) ban.push(aiAvailHtml());
   $('#hBanner').innerHTML = ban.join(''); if (PLATFORM === 'pwa') pwaHomeWire();
   const L = $('#hList');
-  if (!S.surveys.length) { L.innerHTML = `<div class="card" style="grid-column:1/-1"><b>Nessun sopralluogo.</b><div class="mut small" style="margin-top:4px">Crea il primo con "+ Nuovo sopralluogo", carica la planimetria (PDF, DXF o foto) e inizia dal primo locale.</div><button style="margin-top:10px" id="hImp">Importa un backup (ZIP o JSON)</button></div>`; $('#hImp').onclick = () => $('#fJson').click(); return; }
+  if (!S.surveys.length) { L.innerHTML = `<div class="card" style="grid-column:1/-1"><b>Nessun sopralluogo.</b><div class="mut small" style="margin-top:4px">Crea il primo con "+ Nuovo sopralluogo", ${Lic.can('stanze') ? 'carica la planimetria (PDF, DXF o foto) e inizia dal primo locale' : 'carica la planimetria (PDF, DXF o immagine) e scrivi sulla tavola con la penna'}.</div><button style="margin-top:10px" id="hImp">Importa un backup (ZIP o JSON)</button></div>`; $('#hImp').onclick = () => $('#fJson').click(); return; }
   L.innerHTML = S.surveys.map(s => { const st = s.stats || {}; return `<div class="card scard" data-id="${esc(s.id)}"><div class="row"><h3 style="flex:1">${esc(s.name)}</h3><button class="sm ghost" data-del="${esc(s.id)}" style="flex:none" title="Elimina">Elimina</button></div>
     <div class="mut small">${esc([s.client, s.address].filter(Boolean).join(' • ') || '—')}</div>
     <div class="row wrap" style="gap:5px">${s.kind ? `<span class="chip grey">${esc(s.kind)}</span>` : ''}<span class="chip grey">${st.plans || (s.plans || []).length} tavole</span>${s.closed ? `<span class="chip ok">Chiuso il ${fmtDate(s.closed)}</span>` : ''}<span class="chip grey">${st.done || 0}/${st.rooms || 0} locali</span><span class="chip grey">${st.items || 0} elementi</span><span class="chip grey">${st.photos || 0} foto</span>${s.cost && s.cost.calls ? `<span class="chip ai">✦ AI ${fmtUsd(s.cost.usd)}</span>` : ''}${PLATFORM === 'pwa' && !Archive.ready() ? (s.lastBackup ? `<span class="chip grey">Backup ${fmtDate(s.lastBackup)}</span>` : '<span class="chip warn">Backup: mai</span>') : ''}</div>
@@ -144,7 +145,7 @@ function migrateSurvey() { // sopralluoghi fatti con la versione precedente: via
 function showSurvey() {
   $('#home').classList.add('hide'); $('#sv').classList.remove('hide');
   $('#svTitle').textContent = S.sv.name; $('#bUndo').disabled = !S.undo.length;
-  S.tool = 'sel'; S.tmp = {}; renderTools(); renderPlanSel(); renderPalette(); renderPanel(); syncBadge(); aiBadge();
+  S.tool = 'sel'; S.tmp = {}; licPenFix(); licTopbar(); renderTools(); renderPlanSel(); renderPalette(); renderPanel(); syncBadge(); aiBadge();
   if (S.planId) switchPlan(S.planId); else redraw();
 }
 function renderPlanSel() {
@@ -162,10 +163,11 @@ function openMenu() {
   const b = openModal(`<h3>Menu</h3><div class="dlist">
     <div class="drow" data-m="info"><div class="g">Dati sopralluogo (nome, cliente, indirizzo)</div></div>
     ${P ? `<div class="drow" data-m="ren"><div class="g">Rinomina tavola "${esc(P.name)}"</div></div>` : ''}
-    ${P ? `<div class="drow" data-m="cal"><div class="g">Ricalibra la scala della tavola</div></div>` : ''}
+    ${P ? `<div class="drow" data-m="cal"><div class="g">Ricalibra la scala della tavola</div>${Lic.lock('misura')}</div>` : ''}
     ${pend && canAI() ? `<div class="drow" data-m="aiAll" style="color:var(--ai)"><div class="g">Analizza con AI le ${pend} foto in attesa</div></div>` : ''}
-    <div class="drow" data-m="lib"><div class="g">Libreria simboli</div></div>
+    <div class="drow" data-m="lib"><div class="g">Libreria simboli</div>${Lic.lock('simboli')}</div>
     <div class="drow" data-m="set"><div class="g">Impostazioni</div></div>
+    ${Lic.on ? `<div class="drow" data-m="lic"><div class="g">Piani e sblocchi <span class="mut small">· ora: ${esc(Lic.planName())}</span></div></div>` : ''}
     ${P ? `<div class="drow" data-m="delP" style="color:var(--bad)"><div class="g">Elimina tavola "${esc(P.name)}"</div></div>` : ''}
     <div class="drow" data-m="home"><div class="g">Torna all'elenco sopralluoghi</div></div></div>
     <div class="acts"><button onclick="closeModal()">Chiudi</button></div>`);
@@ -177,6 +179,7 @@ function openMenu() {
     if (m === 'aiAll') S.photos.filter(p => (p.aiSt === 'none' || p.aiSt === 'err') && p.kind !== 'dettaglio').forEach(p => AIQ.add(p.id));
     if (m === 'lib') openLibrary();
     if (m === 'set') openSettings();
+    if (m === 'lic') Lic.open();
     if (m === 'delP') {
       if (!await askConfirm(`Eliminare la tavola "${P.name}" con locali, elementi e foto collegate?`, 'Elimina', true)) return;
       S.photos.filter(p => p.planId === P.id).forEach(p => { Sync.del(pathFor('photo:' + p.id)); IDB.del('blobs', 'photo_' + p.id); });

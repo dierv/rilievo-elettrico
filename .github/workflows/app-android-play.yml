@@ -50,7 +50,7 @@ jobs:
         working-directory: app
         run: npm ci --no-audit --no-fund
       - name: App (pagina unica)
-        run: TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
+        run: APP_CHANNEL=store TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www   # build per lo store: solo acquisti veri
       - name: Capacitor
         working-directory: app
         run: npx cap sync android

@@ -1,5 +1,7 @@
-# App iOS di prova (SopraLux, versione gratis): a ogni modifica dei sorgenti costruisce l'app su un Mac di GitHub
-# e la carica su TestFlight. Servono tre secret del repository (Settings → Secrets and variables → Actions):
+# App iOS (SopraLux): a ogni modifica dei sorgenti costruisce l'app su un Mac di GitHub e la carica su TestFlight.
+# Le build automatiche sono di prova (APP_CHANNEL=prova: in «Piani e sblocchi» gli acquisti si possono anche simulare,
+# ma solo nell'ambiente di prova di Apple). La build da mandare alla verifica si fa avviando questo workflow a mano
+# con canale «store»: in App Store Connect va scelta quella (il numero della build è il numero dell'esecuzione). Servono tre secret del repository (Settings → Secrets and variables → Actions):
 #   ASC_KEY_ID, ASC_ISSUER_ID (dalla pagina delle chiavi API di App Store Connect) e ASC_KEY_P8 (contenuto del file AuthKey_….p8).
 # Finché mancano, la build iOS viene saltata.
 name: App iOS di prova (TestFlight)
@@ -8,6 +10,12 @@ on:
     branches: [main]
     paths: ['sorgenti/src/**', 'sorgenti/build_app.sh', 'app/**', 'lib/**', '.github/workflows/app-ios.yml']
   workflow_dispatch:
+    inputs:
+      canale:
+        description: 'store = build da mandare alla verifica di Apple (solo acquisti veri); prova = come quelle automatiche (acquisti anche simulati)'
+        type: choice
+        options: [store, prova]
+        default: store
 concurrency:
   group: app-ios
   cancel-in-progress: true
@@ -44,7 +52,11 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: App (pagina unica)
         if: steps.key.outputs.ok == 'true'
-        run: TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
+        env:
+          APP_CHANNEL: ${{ github.event_name == 'workflow_dispatch' && inputs.canale || 'prova' }}   # a ogni modifica: prova; avviata a mano: store (o quello scelto)
+        run: |
+          echo "::notice::Canale della build iOS n. ${{ github.run_number }}: $APP_CHANNEL"
+          TZ=Europe/Rome sh sorgenti/build_app.sh ../app/www
       - name: Capacitor
         if: steps.key.outputs.ok == 'true'
         working-directory: app

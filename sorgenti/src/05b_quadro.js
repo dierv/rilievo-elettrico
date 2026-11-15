@@ -98,6 +98,7 @@ async function readQuadroDet(ph, di, force) {
   return q;
 }
 async function rereadQuadro(it) {
+  if (!Lic.need('ai')) return; // lettura del quadro con l'AI: negli abbonamenti
   const rs = quadroReadings(it); if (!rs.length) { toast('Nessuna foto del quadro da rileggere', true); return; }
   const jobs = rs.map(async r => {
     if (r.d == null) { AIQ.add(r.ph.id, true); return; }

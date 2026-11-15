@@ -208,7 +208,7 @@ const UIP = { // preferenze di questo dispositivo (pannello, tema): non vanno ne
 /* tema: chiaro di serie (si legge al sole), scuro, oppure come il tablet; sfondo delle tavole DXF: bianco, grigio o nero */
 const THEME_MQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 const DXF_BG = { w: ['Bianco', '#ffffff'], g: ['Grigio', '#2f353d'], k: ['Nero', '#000000'] };
-const dxfBg = () => DXF_BG[UIP.get('dxfBg', 'w')] ? UIP.get('dxfBg', 'w') : 'w';
+const dxfBg = () => DXF_BG[UIP.get('dxfBg', 'w')] && Lic.can('dxf') ? UIP.get('dxfBg', 'w') : 'w'; // grigio e nero: con lo sblocco «Colori del DXF»
 function isDark() { const t = UIP.get('theme', 'light'); return t === 'dark' || (t === 'auto' && !!(THEME_MQ && THEME_MQ.matches)); }
 function applyTheme() {
   const d = isDark(), root = document.documentElement; if (root && root.classList) root.classList.toggle('dark', d);
