@@ -122,8 +122,8 @@ const Lic = {
     const st = this.api(); if (!st || this.loading) return;
     if (!force && this.prices && Date.now() - this.pricesAt < 5 * 60000) return;
     this.loading = true; this.render();
-    try { this.prices = await st.products(Object.values(LIC_SKUS)); this.pricesAt = Date.now(); this.priceErr = ''; }
-    catch (e) { this.prices = null; this.priceErr = (e && e.message) || String(e); }
+    try { this.prices = await st.products(Object.values(LIC_SKUS)); this.pricesAt = Date.now(); this.priceErr = Object.keys(this.prices).length ? '' : (st.lastErr || 'nessun prodotto restituito'); }
+    catch (e) { this.prices = null; this.priceErr = st.lastErr || (e && e.message) || String(e); }
     this.loading = false; this.render();
   },
   info(pid) { return (this.prices && this.prices[pid]) || null; },
@@ -212,7 +212,7 @@ const Lic = {
     const mem = LIC_MEM.map(x => `<div class="licr" data-row="${x.id}"><div class="g"><b>${esc(x.name)}</b><div class="mut small">al mese, in aggiunta all'archivio del piano</div></div><div class="licb">${base && !this.has(x.pid) ? `<span class="mut small">${esc(this.price(x))}</span>` : this.btn(x)}</div></div>`).join('');
     const note = !st ? '' : this.loading ? '<div class="mut small">Leggo i prezzi dallo store…</div>'
       : this.prices && Object.keys(this.prices).length ? ''
-        : `<div class="banner warn">${this.channel === 'prova' ? `Su ${store} questi prodotti non ci sono ancora (o lo store non risponde): gli acquisti veri si accendono quando i prodotti sono attivi nella console dello store.` : `Prezzi di ${store} non disponibili: controlla la connessione e riapri questa schermata.`}${this.priceErr && this.channel === 'prova' ? ` <span class="small">(${esc(this.priceErr)})</span>` : ''}</div>`;
+        : `<div class="banner warn">${this.channel === 'prova' ? `Su ${store} questi prodotti non ci sono ancora (o lo store non risponde): gli acquisti veri si accendono quando i prodotti sono attivi nella console dello store.` : `Prezzi di ${store} non disponibili: controlla la connessione e riapri questa schermata.`}${this.priceErr ? `<div class="small mut" style="margin-top:4px">Dettaglio: ${esc(this.priceErr)}</div>` : ''}</div>`;
     return `<div class="row"><h3 style="flex:1">Piani e sblocchi</h3><button class="sm ghost" data-a="close" style="flex:none" title="Chiudi">✕</button></div>
       <div class="small">Adesso hai: ${state}</div>
       ${f ? `<div class="banner info"><span class="lkw">${LIC_LOCK}</span> <b>${esc(f[0])}</b> ${fu ? `si sblocca con «${esc(fu.name)}» (${esc(this.price(fu))}), con «${esc(LIC_ALL.name)}» o con un abbonamento.` : 'fa parte degli abbonamenti (Pro e Studio).'}</div>` : ''}

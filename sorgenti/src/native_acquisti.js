@@ -34,17 +34,27 @@ const LicStore = (() => {
         for (const x of (r && r.products) || []) out[x.identifier] = { price: x.priceString, trial: x.introEligibility === 2 ? trialDays(x.introductoryPrice) : 0 };
         return out;
       }
-      // Android: una richiesta per tipo; se non trova nessun prodotto il plugin risponde con un errore
-      if (ids('inapp').length) try { const r = await p.getProducts({ productIdentifiers: ids('inapp'), productType: 'inapp' }); for (const x of (r && r.products) || []) if (!out[x.identifier]) out[x.identifier] = { price: x.priceString }; } catch (e) { if (!/not found/i.test((e && e.message) || '')) throw e; }
-      if (ids('subs').length) try {
-        const r = await p.getProducts({ productIdentifiers: ids('subs'), productType: 'subs' });
+      // Android: una richiesta per tipo, indipendenti (un errore negli abbonamenti non fa perdere gli sblocchi).
+      // Se non trova nessun prodotto il plugin risponde «Product not found»: il motivo resta in lastErr per la schermata.
+      const errs = []; let hard = null;
+      const ask = async (k, fn) => { if (!ids(k).length) return; try { fn(await p.getProducts({ productIdentifiers: ids(k), productType: k })); }
+        catch (e) { const m = (e && e.message) || String(e); errs.push(k + ': ' + m + (e && e.code ? ' [' + e.code + ']' : '')); if (!/not found/i.test(m)) hard = e; } };
+      await ask('inapp', r => { for (const x of (r && r.products) || []) if (!out[x.identifier]) out[x.identifier] = { price: x.priceString }; });
+      await ask('subs', r => {
         for (const x of (r && r.products) || []) { // una voce per il piano base e una per ogni offerta a cui l'utente ha diritto
           const o = out[x.planIdentifier] = out[x.planIdentifier] || {};
           if (x.offerId == null) { o.price = x.priceString; o.plan = x.identifier; }
           else { const d = trialDays(x.introductoryPrice); if (d && !o.trial) { o.trial = d; o.token = x.offerToken; o.plan = o.plan || x.identifier; } }
         }
         for (const k of Object.keys(out)) if (!out[k].price) delete out[k]; // offerta senza il suo piano base: non si mostra
-      } catch (e) { if (!/not found/i.test((e && e.message) || '')) throw e; }
+      });
+      if (!Object.keys(out).length) { // per capire il motivo: Google Play risponde? da quale paese?
+        const t = (pr, ms) => Promise.race([pr, new Promise(r => setTimeout(() => r(null), ms))]);
+        try { const b = await t(p.isBillingSupported(), 8000); errs.push('billing: ' + (b ? (b.isBillingSupported ? 'sì' : 'no') : '?')); } catch (e) { }
+        try { const c = await t(p.getStorefront(), 8000); errs.push('paese: ' + ((c && c.countryCode) || '?')); } catch (e) { }
+      }
+      this.lastErr = errs.join(' · ');
+      if (hard && !Object.keys(out).length) throw hard;
       return out;
     },
     // Prodotti posseduti adesso su questo dispositivo (sblocchi e abbonamenti attivi)

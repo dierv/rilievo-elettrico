@@ -35,9 +35,11 @@
     const fail = (message, code) => { const e = new Error(message); if (code) e.code = code; return Promise.reject(e); };
     plugins.NativePurchases = {
       async isBillingSupported() { return { isBillingSupported: true }; },
+      async getStorefront() { return { countryCode: 'IT' }; },
       getProducts(o) {
         calls.push(['getProducts', o]); const ids = o.productIdentifiers || [];
         if (st.failProducts) return fail('store non raggiungibile');
+        if (st.failSubs && o.productType === 'subs') return fail('Billing task failed', 'SERVICE_UNAVAILABLE');
         if (platform === 'ios') return Promise.resolve({ products: st.products.filter(p => ids.includes(p.identifier)) });
         const type = o.productType || 'inapp';
         const out = st.products.filter(p => (p._type || 'inapp') === type && ids.includes(type === 'subs' ? p.planIdentifier : p.identifier));

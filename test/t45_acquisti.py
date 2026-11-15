@@ -279,6 +279,17 @@ def t_states(br, sv, prova, png):
     check(a.js("Lic.plan() === 'pro'"), 'senza rete resta valido l\'ultimo stato letto dallo store')
     a.js("Lic.open()"); a.pg.wait_for_timeout(500)
     check('non ci sono ancora' in a.pg.inner_text('#licBox') and a.pg.locator('#licBox [data-buy]:not([disabled])').count() == 0, 'senza prezzi dallo store i tasti di acquisto sono spenti e la schermata lo dice')
+    check('Dettaglio: inapp: store non raggiungibile' in a.pg.inner_text('#licBox'), 'la schermata mostra il motivo che dà lo store')
+    a.close_modal(); a.close()
+    # nessun prodotto: la schermata dice che cosa ha risposto Google Play
+    a = App(br, sv, prova, 'android', {'products': [], 'owned': []})
+    a.js("Lic.open()"); a.pg.wait_for_timeout(600); t = a.pg.inner_text('#licBox')
+    check('inapp: Product not found' in t and 'subs: Product not found' in t and 'billing: sì' in t and 'paese: IT' in t, f'nessun prodotto: si vede la risposta di Google Play ({t[t.find("Dettaglio"):][:120]})')
+    a.close_modal(); a.close()
+    # errore negli abbonamenti: gli sblocchi restano comprabili
+    a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': [], 'failSubs': True})
+    a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
+    check(not a.js(f"document.querySelector('#licBox [data-buy=\"{PRE}misura\"]').disabled") and a.js(f"document.querySelector('#licBox [data-buy=\"{PRE}pro_mese\"]').disabled"), 'se gli abbonamenti non rispondono, gli sblocchi si comprano lo stesso')
     a.close_modal(); a.close()
     # abbonamento scaduto mentre l'app è aperta
     a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': owned('android', 'pro_mese', 'misura')})
