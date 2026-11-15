@@ -297,6 +297,8 @@ async function toggleDxfCol() { // interruttore «colori del DXF»: si ricarica 
 }
 function colBtnUpdate() {
   const b = $('#zCol'); if (!b) return; const P = curPlan();
-  b.classList.toggle('hide', !(P && (P.dxfCol || P.dxf))); b.classList.toggle('on', dxfColOn(P)); b.classList.toggle('lk', !Lic.can('dxf'));
+  b.classList.toggle('hide', !(P && (P.dxfCol || P.dxf))); b.classList.toggle('on', dxfColOn(P));
+  const lk = !Lic.can('dxf'), li = b.querySelector('svg.lki'); b.classList.toggle('lk', lk); // lucchetto come sugli altri strumenti da sbloccare
+  if (lk && !li) b.insertAdjacentHTML('beforeend', LIC_LOCK); else if (!lk && li) li.remove();
   b.title = !P || !P.dxfCol ? 'Colori del DXF: tocca per aggiungerli (scegli lo stesso file DXF)' : dxfColOn(P) ? 'Colori del DXF: accesi (tocca per tutto nero)' : 'Colori del DXF: spenti (tocca per vederli)';
 }
