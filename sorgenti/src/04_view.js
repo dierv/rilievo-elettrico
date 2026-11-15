@@ -178,16 +178,6 @@ function draw() {
   // disegni a mano libera
   for (const d of S.draws) { if (d.planId !== P.id) continue; const sel = S.sel && S.sel.t === 'draw' && S.sel.id === d.id; for (const st of d.strokes) drawStroke(x, st, sel); }
   if (S.tmp && S.tmp.stroke) drawStroke(x, S.tmp.stroke, false);
-  if (S.tmp && S.tmp.snap) { // penna sollevata: il pezzetto previsto in più rientra nella punta (come in Note e Freeform)
-    const sn = S.tmp.snap, k = (performance.now() - sn.t0) / 170;
-    if (k >= 1) S.tmp.snap = null;
-    else {
-      const e = 1 - Math.pow(1 - k, 3); const keep = sn.len * (1 - e); const out = [sn.pts[0]]; let d = 0;
-      for (let i = 1; i < sn.pts.length && d < keep; i++) { const a = sn.pts[i - 1], b = sn.pts[i]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]) * S.view.s; if (d + l <= keep) { out.push(b); d += l; } else { const t = (keep - d) / l; out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, ...a.slice(2)]); d = keep; } }
-      if (out.length > 1) drawStroke(x, { pts: out, col: sn.col, w: sn.w }, false);
-      redraw();
-    }
-  }
   // elementi
   const R = ST().symPx / 2;
   if (S.showClosure && closedAt()) drawClosureGhosts(x, P, R);
@@ -289,19 +279,50 @@ function simplifyStroke(P, tol, ptol = 0.08) { // come simplifyPts, ma con la pr
   return P.filter((_, i) => keep[i]);
 }
 const prW = p => p == null ? 1 : 0.35 + 1.3 * p; // spessore relativo secondo la pressione (0,5 = normale)
-function strokePath(x, pts, tr, w, col) { // tratto morbido (curve fra i punti medi); con la penna lo spessore segue la pressione
+function splineCtl(P) { // tangenti della curva che passa per tutti i punti (parametro sulla lunghezza dei tratti: niente riccioli né spigoli)
+  const n = P.length, d = [], m = [];
+  for (let i = 0; i < n - 1; i++) d.push(Math.max(1e-9, Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1])));
+  for (let i = 0; i < n; i++) {
+    const a = P[Math.max(0, i - 1)], b = P[Math.min(n - 1, i + 1)], l = i === 0 ? d[0] : i === n - 1 ? d[n - 2] : d[i - 1] + d[i];
+    m.push([(b[0] - a[0]) / l, (b[1] - a[1]) / l]);
+  }
+  return { d, m };
+}
+function splineSeg(P, d, m, i) { const a = P[i], b = P[i + 1], k = d[i] / 3; return [a[0] + m[i][0] * k, a[1] + m[i][1] * k, b[0] - m[i + 1][0] * k, b[1] - m[i + 1][1] * k]; }
+function strokePath(x, pts, tr, w, col) { // la curva passa esattamente per i punti scritti; con la penna lo spessore segue la pressione
   x.lineCap = 'round'; x.lineJoin = 'round'; x.strokeStyle = col;
   const n = pts.length; if (!n) return;
   const P = pts.map(tr); const pr = pts.some(p => p.length > 2);
   if (n === 1) { x.beginPath(); x.arc(P[0][0], P[0][1], Math.max(0.6, w * (pr ? prW(pts[0][2]) : 1)) / 2, 0, 7); x.fillStyle = col; x.fill(); return; }
-  const mid = i => [(P[i][0] + P[i + 1][0]) / 2, (P[i][1] + P[i + 1][1]) / 2];
-  if (!pr) { x.beginPath(); x.moveTo(P[0][0], P[0][1]); for (let i = 1; i < n - 1; i++) { const m = mid(i); x.quadraticCurveTo(P[i][0], P[i][1], m[0], m[1]); } x.lineTo(P[n - 1][0], P[n - 1][1]); x.lineWidth = w; x.stroke(); return; }
+  const { d, m } = splineCtl(P);
+  if (!pr) { x.beginPath(); x.moveTo(P[0][0], P[0][1]); for (let i = 0; i < n - 1; i++) { const c = splineSeg(P, d, m, i); x.bezierCurveTo(c[0], c[1], c[2], c[3], P[i + 1][0], P[i + 1][1]); } x.lineWidth = w; x.stroke(); return; }
   const W = pts.map(p => w * prW(p[2] ?? 0.5));
-  let a = P[0];
-  for (let i = 1; i < n; i++) { // ogni pezzo va da un punto medio al successivo, col punto come controllo: niente spigoli
-    const b = i < n - 1 ? mid(i) : P[i];
-    x.beginPath(); x.moveTo(a[0], a[1]); x.quadraticCurveTo(P[i][0], P[i][1], b[0], b[1]); x.lineWidth = Math.max(0.6, i === 1 ? (W[0] + W[1]) / 2 : W[i]); x.stroke(); a = b;
+  for (let i = 0; i < n - 1; i++) {
+    const c = splineSeg(P, d, m, i); x.beginPath(); x.moveTo(P[i][0], P[i][1]); x.bezierCurveTo(c[0], c[1], c[2], c[3], P[i + 1][0], P[i + 1][1]);
+    x.lineWidth = Math.max(0.6, (W[i] + W[i + 1]) / 2); x.stroke();
   }
+}
+function strokeDense(pts, step) { // punti fitti lungo la curva disegnata (la gomma taglia sulla linea che si vede)
+  const n = pts.length; if (n < 2) return pts.slice(); const { d, m } = splineCtl(pts); const out = [pts[0]];
+  for (let i = 0; i < n - 1; i++) {
+    const a = pts[i], b = pts[i + 1], c = splineSeg(pts, d, m, i), q = Math.max(1, Math.ceil(d[i] / step)), pa = a.length > 2 && b.length > 2;
+    for (let j = 1; j <= q; j++) {
+      const t = j / q, u = 1 - t, A = u * u * u, B = 3 * u * u * t, C = 3 * u * t * t, D = t * t * t;
+      const xx = A * a[0] + B * c[0] + C * c[2] + D * b[0], yy = A * a[1] + B * c[1] + C * c[3] + D * b[1];
+      out.push(pa ? [xx, yy, a[2] + (b[2] - a[2]) * t] : [xx, yy]);
+    }
+  }
+  return out;
+}
+function packStroke(pts) { // tratto da salvare: tolti solo i punti che non cambiano la curva (meno di 0,25 px), coordinate fini secondo lo zoom
+  const sc = S.view.s, f = 10 ** clamp(Math.ceil(Math.log10(Math.max(1e-9, sc) / 0.1)), 1, 4), rd = v => Math.round(v * f) / f;
+  return simplifyStroke(pts, 0.25 / sc, 0.05).map(p => p.length > 2 ? [rd(p[0]), rd(p[1]), +(+p[2]).toFixed(2)] : [rd(p[0]), rd(p[1])]);
+}
+function steadyTail(pts) { // sollevando la penna la pressione cala: negli ultimi pixel lo spessore resta quello della scrittura
+  if (pts.length < 2 || pts[0].length < 3) return pts; const out = pts.map(p => p.slice()); let len = 0, k = out.length - 1;
+  while (k > 0 && len < 8) { len += Math.hypot(out[k][0] - out[k - 1][0], out[k][1] - out[k - 1][1]) * S.view.s; k--; }
+  const pk = out[k][2]; for (let i = k + 1; i < out.length; i++) out[i][2] = Math.max(out[i][2], pk);
+  return out;
 }
 function inkCol(col) { // sul DXF a fondo scuro l'inchiostro nero si vede bianco (solo sullo schermo)
   if (!S.planDark || !/^#[0-9a-f]{6}$/i.test(col || '')) return col;
@@ -310,7 +331,7 @@ function inkCol(col) { // sul DXF a fondo scuro l'inchiostro nero si vede bianco
 function drawStroke(x, st, sel) {
   const w = Math.max(0.8, st.w * S.view.s); const tr = p => toS(p[0], p[1]);
   if (sel) strokePath(x, st.pts.map(p => [p[0], p[1]]), tr, w + 10, 'rgba(29,78,216,.3)');
-  strokePath(x, st.pred && st.pred.length ? st.pts.concat(st.pred) : st.pts, tr, w, inkCol(st.col)); // mentre scrivi l'inchiostro arriva un filo avanti alla punta (punti previsti)
+  strokePath(x, st.pts, tr, w, inkCol(st.col));
 }
 /* ---- strumento misura: distanze per tratto, area se il poligono si chiude ---- */
 const MEAS_COL = '#0e7490';
@@ -364,24 +385,28 @@ function toolSnap() { // come si aggancia il punto per lo strumento attivo (ugua
   if (S.tool === 'meas') return measSnap;
   return null;
 }
-function eraseAt(pid, cx, cy, r, before) { // gomma: toglie le parti dei tratti sotto il cerchio, il resto del tratto rimane (diviso in pezzi)
-  let any = false;
+function eraseAt(pid, cx, cy, r, before) { // gomma: toglie esattamente la parte dei tratti sotto il cerchio; il resto non si muove (diviso in pezzi)
+  let any = false; const step = 0.35 / S.view.s, near = 3 / S.view.s;
   for (const d of S.draws) {
     if (d.planId !== pid) continue; let out = null;
     for (let k = 0; k < d.strokes.length; k++) {
-      const st = d.strokes[k]; const rr = r + st.w / 2; let hit = false;
-      for (let i = 0; i < st.pts.length && !hit; i++) { const a = st.pts[i], b = st.pts[i + 1] || a; if (segDist([cx, cy], a, b) < rr) hit = true; }
-      if (!hit) { if (out) out.push(st); continue; }
+      const st = d.strokes[k]; const rr = r + st.w / 2; let maybe = false;
+      for (let i = 0; i < st.pts.length && !maybe; i++) { const a = st.pts[i], b = st.pts[i + 1] || a; if (segDist([cx, cy], a, b) < rr + near) maybe = true; }
+      const dense = maybe ? strokeDense(st.pts, step) : null; const ins = p => Math.hypot(p[0] - cx, p[1] - cy) < rr;
+      if (!dense || !dense.some(ins)) { if (out) out.push(st); continue; }
       if (!any) { before(); any = true; } if (!out) out = d.strokes.slice(0, k);
-      const step = Math.max(r * 0.25, 0.3); const dense = [];
-      for (let i = 0; i < st.pts.length; i++) {
-        const a = st.pts[i], b = st.pts[i + 1]; dense.push(a); if (!b) break;
-        const n = Math.floor(Math.hypot(b[0] - a[0], b[1] - a[1]) / step);
-        for (let j = 1; j < n; j++) { const t = j / n; dense.push(a.length > 2 && b.length > 2 ? [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t] : [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
-      }
+      const edge = (a, b, exit) => { // punto del segmento a→b sul bordo del cerchio
+        const dx = b[0] - a[0], dy = b[1] - a[1], fx = a[0] - cx, fy = a[1] - cy, A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - rr * rr, D = B * B - 4 * A * C;
+        if (A < 1e-12 || D < 0) return null; const t = clamp((-B + (exit ? 1 : -1) * Math.sqrt(D)) / (2 * A), 0, 1);
+        return a.length > 2 && b.length > 2 ? [a[0] + dx * t, a[1] + dy * t, a[2] + (b[2] - a[2]) * t] : [a[0] + dx * t, a[1] + dy * t];
+      };
       let run = [];
-      const flush = () => { if (run.length >= 2) out.push({ ...st, pts: simplifyStroke(run, 0.6 / S.view.s).map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]) }); run = []; };
-      for (const p of dense) { if (Math.hypot(p[0] - cx, p[1] - cy) < rr) flush(); else run.push(p); }
+      const flush = () => { if (run.length >= 2) out.push({ ...st, pts: packStroke(run) }); run = []; };
+      for (let i = 0; i < dense.length; i++) {
+        const p = dense[i], q = dense[i - 1];
+        if (ins(p)) { if (q && !ins(q)) { const e = edge(q, p, false); if (e) run.push(e); } flush(); }
+        else { if (q && ins(q)) { const e = edge(q, p, true); if (e) run.push(e); } run.push(p); }
+      }
       flush();
     }
     if (out) d.strokes = out;
@@ -409,8 +434,7 @@ function eraseGesture(x0, y0) {
 }
 function finishStroke(st) {
   const P = curPlan(); if (!P) return; pushUndo();
-  let pts = st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05, ...st.pts[0].slice(1)]] : simplifyStroke(st.pts, 0.6 / S.view.s);
-  pts = pts.map(p => p.length > 2 ? [r1(p[0]), r1(p[1]), p[2]] : [r1(p[0]), r1(p[1])]);
+  const pts = packStroke(st.pts.length === 1 ? [st.pts[0], [st.pts[0][0] + 0.05 / S.view.s, ...st.pts[0].slice(1)]] : steadyTail(st.pts));
   let d = S.penDraw && drawById(S.penDraw);
   if (!d || d.planId !== P.id) { d = { id: uid('d'), planId: P.id, strokes: [] }; S.draws.push(d); S.penDraw = d.id; } // cambiata tavola: nuovo disegno in quella corrente
   d.strokes.push({ pts, col: st.col, w: +st.w.toFixed(3) }); penLog('stroke', null, st.pts.length + ' punti'); Sync.mark('plan:' + P.id); renderPalette(); redraw();
@@ -708,7 +732,7 @@ function initCanvas() {
       S.view.s = ns; S.view.r = (v0.r || 0) + da; S.view.tx = m[0] - (ox * cs - oy * sn) * k; S.view.ty = m[1] - (ox * sn + oy * cs) * k; if (gest.rot) rotBtnUpdate(); redraw();
     } else if (gest && gest.move) {
       const ev = gest.fine && e.getCoalescedEvents ? e.getCoalescedEvents() : null; // la penna manda più punti per evento: si prendono tutti
-      if (ev && ev.length > 1) for (const ce of ev) { const [cx, cy] = pos(ce); gest.move(cx, cy); } else gest.move(x, y);
+      if (ev && ev.length > 1) for (const ce of ev) { if (pp.pen && ce.pressure) curPtr.p = ce.pressure; const [cx, cy] = pos(ce); gest.move(cx, cy); } else gest.move(x, y);
       if (gest && gest.predict) { let pe = null; try { pe = e.getPredictedEvents ? e.getPredictedEvents() : null; } catch (er) { } gest.predict(pe && pe.length ? pe.map(pos) : null, x, y, e.timeStamp); }
     }
   });
@@ -770,7 +794,7 @@ function startGesture(x0, y0) {
     if (h && h.t === 'draw') {
       const o = h.o; select('draw', o.id); let moved = false; const [bx0, by0] = toB(x0, y0); const orig = JSON.parse(JSON.stringify(o.strokes));
       return {
-        move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; if (!moved) pushUndo(); moved = true; const [bx, by] = toB(x, y); const dx = bx - bx0, dy = by - by0; o.strokes = orig.map(st => ({ ...st, pts: st.pts.map(p => [r1(p[0] + dx), r1(p[1] + dy), ...p.slice(2)]) })); redraw(); },
+        move(x, y) { if (!moved && Math.hypot(x - x0, y - y0) < 8) return; if (!moved) pushUndo(); moved = true; const [bx, by] = toB(x, y); const dx = bx - bx0, dy = by - by0; o.strokes = orig.map(st => ({ ...st, pts: st.pts.map(p => [Math.round((p[0] + dx) * 1e4) / 1e4, Math.round((p[1] + dy) * 1e4) / 1e4, ...p.slice(2)]) })); redraw(); },
         up() { if (moved) Sync.mark('plan:' + o.planId); renderPanel(); redraw(); },
       };
     }
@@ -840,28 +864,19 @@ function startGesture(x0, y0) {
   if (tool === 'pen' && S.pen.erase) return eraseGesture(x0, y0);
   if (tool === 'pen') {
     const [bx, by] = toB(x0, y0); const prs = () => +clamp(curPtr.p, 0.05, 1).toFixed(2); // con la penna il tratto segue la pressione
-    const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s }; const raw = [];
+    const st = { pts: [curPtr.pen ? [bx, by, prs()] : [bx, by]], col: S.pen.col, w: S.pen.w / S.view.s };
     S.tmp.stroke = st; PEN.lastAt = performance.now(); redraw();
     const add = (x, y, min) => { const [b2x, b2y] = toB(x, y); const l = st.pts[st.pts.length - 1]; if (Math.hypot(b2x - l[0], b2y - l[1]) * S.view.s > min) { st.pts.push(curPtr.pen ? [b2x, b2y, prs()] : [b2x, b2y]); redraw(); } };
     return {
       fine: true, pen: true, // riceve tutti i punti intermedi (scrittura piccola e veloce)
-      move(x, y) { add(x, y, 0.75); PEN.lastAt = performance.now(); },
-      predict(list, x, y, t) { // punti previsti dal browser (o stimati dalla velocità): disegnati in anticipo, poi buttati
-        raw.push([x, y, t]); while (raw.length > 2 && t - raw[0][2] > 45) raw.shift();
-        let P = list;
-        if (!P || !P.length) { const a = raw[0]; const dt = t - a[2]; P = []; if (dt > 4) { const vx = (x - a[0]) / dt, vy = (y - a[1]) / dt; P = [[x + vx * 22, y + vy * 22]]; } }
-        let d = 0, l = [x, y]; const out = [];
-        for (const q of P) { const s2 = Math.hypot(q[0] - l[0], q[1] - l[1]); if (d + s2 > 16) { if (d < 16) { const k = (16 - d) / s2; out.push([l[0] + (q[0] - l[0]) * k, l[1] + (q[1] - l[1]) * k]); } break; } d += s2; out.push(q); l = q; } // al massimo 16 px avanti
-        st.pred = d > 0.8 || out.length > 1 ? out.map(([a, b]) => { const [bx, by] = toB(a, b); return curPtr.pen ? [bx, by, prs()] : [bx, by]; }) : null;
-      },
+      move(x, y) { add(x, y, 0.5); PEN.lastAt = performance.now(); },
       up(x, y, cancel) {
-        S.tmp.stroke = null; PEN.lastAt = performance.now(); const pred = st.pred; st.pred = null;
+        S.tmp.stroke = null; PEN.lastAt = performance.now(); // solo i punti veri della penna: niente punti previsti né codina al sollevamento
         if (cancel && st.pts.length < 2) { penLog('drop', null, 'annullato dal browser prima di scrivere'); redraw(); return; } // annullato dal browser prima di scrivere: niente
         add(x, y, 0.2);
-        if (pred && pred.length) { const tail = [st.pts[st.pts.length - 1], ...pred]; let len = 0; for (let i = 1; i < tail.length; i++) len += Math.hypot(tail[i][0] - tail[i - 1][0], tail[i][1] - tail[i - 1][1]) * S.view.s; if (len > 1.5) S.tmp.snap = { pts: tail, len, col: st.col, w: st.w, t0: performance.now() }; }
         finishStroke(st); // l'ultimo punto conta anche se il tratto è cortissimo
       },
-      finish() { S.tmp.stroke = null; st.pred = null; PEN.lastAt = performance.now(); finishStroke(st); }, // sollevamento perso: il tratto si tiene così com'è
+      finish() { S.tmp.stroke = null; PEN.lastAt = performance.now(); finishStroke(st); }, // sollevamento perso: il tratto si tiene così com'è
       cancel() { S.tmp.stroke = null; penLog('drop', null, 'tratto annullato (' + st.pts.length + ' punti)'); redraw(); },
     };
   }
