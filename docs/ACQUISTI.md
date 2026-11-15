@@ -63,6 +63,12 @@ Gli stessi 17 codici su Google Play e App Store. **Un codice non si può più ca
 - Prova gratuita: sui due prodotti del Pro un'offerta (per esempio `prova14`) con 14 giorni gratis, idoneità «nuovi clienti: non ha mai avuto nessun abbonamento». L'app la usa da sola quando Play la propone.
 - **Prezzi:** il prezzo scritto in «Modifica collettivamente i prezzi» / «Imposta prezzo» è **senza IVA**: Play aggiunge l'IVA di ogni paese. Per avere €0,99 in Italia si scrive 0,81 (= 0,99 / 1,22). Prezzi netti usati: 0,81 · 1,63 · 2,45 · 5,73 · 12,29 (Pro mese) · 122,94 (Pro anno).
 
+**Stato su App Store Connect (15/11/2026, sera)**
+- Accordo per le app a pagamento attivo.
+- Creati: gli 8 sblocchi (non consumabili) e il gruppo «SopraLux Pro» con `sopralux_pro_mese` e `sopralux_pro_anno` (livello 1, prova gratuita di 2 settimane per i nuovi abbonati in tutti i paesi). Paese di base Italia: €0,99, €1,99, €2,99, €6,99, €14,99, €149,99 (su Apple i prezzi UE comprendono l'IVA). Disponibili in tutti i 175 paesi, testo in italiano.
+- Stato «Metadati mancanti»: manca lo screenshot per la verifica (serve solo per l'invio ad Apple, non per le prove da TestFlight).
+- Creati con le chiamate che usa la pagina di App Store Connect (`/iris/v1`, `/iris/v2`), dal browser con il tuo accesso: nessuna chiave salvata.
+
 **Stato su Google Play (15/11/2026, sera)**
 - Creati e attivi: gli 8 prodotti a pagamento singolo (opzione di acquisto `acquisto`, compatibile con le versioni precedenti) e i 2 abbonamenti Pro (piano base `base`, offerta `prova14` di 14 giorni). Prezzi in Italia controllati: €0,99, €1,99, €2,99, €6,99, €14,99, €149,99.
 - **Provati sul tablet (15/11, sera), con la carta di prova:** acquisto di sblocchi e abbonamento Pro funzionano. I prodotti appena creati sono comparsi nell'app solo dopo 1-3 ore (prima: «Prezzi di Google Play non disponibili»).
