@@ -45,6 +45,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view app-prova >/dev/null 2>&1 || gh release create app-prova --prerelease --title "SopraLux – app Android di prova" --notes "APK di prova della versione gratis. Si aggiorna da solo a ogni modifica: scarica SopraLux-prova.apk e installalo sul tablet."
+          gh release view app-prova >/dev/null 2>&1 || gh release create app-prova --prerelease --title "SopraLux – app Android di prova" --notes "APK di prova di SopraLux. Si aggiorna da solo a ogni modifica: scarica SopraLux-prova.apk e installalo sul tablet."
           gh release upload app-prova SopraLux-prova.apk --clobber
-          gh release edit app-prova --notes "APK di prova della versione gratis, build n. ${{ github.run_number }} del $(TZ=Europe/Rome date '+%d/%m/%Y %H:%M'). Scarica SopraLux-prova.apk e installalo sul tablet (si installa sopra la versione precedente senza perdere i dati)."
+          gh release edit app-prova --notes "APK di prova di SopraLux (build di prova: in «Piani e sblocchi» gli acquisti si possono anche simulare), build n. ${{ github.run_number }} del $(TZ=Europe/Rome date '+%d/%m/%Y %H:%M'). Scarica SopraLux-prova.apk e installalo sul tablet (si installa sopra la versione precedente senza perdere i dati)."
