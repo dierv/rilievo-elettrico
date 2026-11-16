@@ -42,6 +42,7 @@ const FirebaseAccount = {
         this.ready = true;
         this.error = '';
         this.refresh();
+        if (typeof Lic !== 'undefined' && Lic.onAccount) Lic.onAccount(); // app degli store: acquisti dell'account
       }, error => {
         this.ready = false;
         this.error = 'Accesso non disponibile. Riapri l’app per riprovare.';

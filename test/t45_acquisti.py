@@ -6,7 +6,7 @@ Uso (dalla cartella principale del repo, dopo `npm ci` nella cartella app):
     python3 test/t45_acquisti.py
 Servono: playwright per Python, Pillow, pypdf e Chrome (variabile CHROME per indicarne il percorso).
 """
-import base64, functools, http.server, io, json, os, socketserver, subprocess, sys, tempfile, threading, zipfile
+import base64, functools, hashlib, http.server, io, json, os, socketserver, subprocess, sys, tempfile, threading, time, zipfile
 from playwright.sync_api import sync_playwright
 from PIL import Image, ImageDraw
 from pypdf import PdfReader
@@ -65,7 +65,7 @@ def owned(platform, *pids):
     out = []
     for i, pid in enumerate(pids):
         t = 'subs' if pid in dict(SUBS) else 'inapp'
-        if platform == 'ios': out.append({'transactionId': str(2000001 + i), 'productIdentifier': PRE + pid, 'productType': t, 'isActive': True if t == 'subs' else None, 'subscriptionState': 'subscribed' if t == 'subs' else None, 'willCancel': None})
+        if platform == 'ios': out.append({'transactionId': str(2000001 + i), 'productIdentifier': PRE + pid, 'productType': t, 'isActive': True if t == 'subs' else None, 'subscriptionState': 'subscribed' if t == 'subs' else None, 'willCancel': None, 'jwsRepresentation': 'jws.' + PRE + pid})
         else: out.append({'transactionId': f'tok{i}', 'purchaseToken': f'tok{i}', 'productIdentifier': PRE + pid, 'productType': t, 'purchaseState': '1', 'isAcknowledged': True, 'willCancel': None})
     return out
 
@@ -464,6 +464,89 @@ def t_work(br, sv, prova, pwa, png):
         a.close_modal(); check(not a.errs, f'{name}: nessun errore in console: {a.errs[:3]}'); a.close()
 
 
+FN = 'https://europe-west1-sopralux-64b29.cloudfunctions.net/verificaAcquisti'
+
+
+def gettone(uid):  # appAccountToken: stessa formula dell'app e del server (firebase/functions/acquisti.js)
+    h = hashlib.sha256(('sopralux:' + uid).encode()).hexdigest()
+    return f"{h[0:8]}-{h[8:12]}-5{h[13:16]}-{((int(h[16], 16) & 3) | 8):x}{h[17:20]}-{h[20:32]}"
+
+
+class FakeFn:
+    """La funzione verificaAcquisti finta: registra le chiamate e risponde con answer (dict) o con un codice di errore."""
+    def __init__(self, a, answer):
+        self.calls, self.answer = [], answer
+        a.pg.route(FN, self.handle)
+
+    def handle(self, route):
+        req, hdr = route.request, {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization', 'Access-Control-Allow-Methods': 'POST, OPTIONS'}
+        if req.method == 'OPTIONS': return route.fulfill(status=204, headers=hdr)
+        self.calls.append({'auth': req.headers.get('authorization'), 'data': json.loads(req.post_data or '{}').get('data')})
+        if isinstance(self.answer, int): return route.fulfill(status=self.answer, headers=hdr, content_type='application/json', body=json.dumps({'error': {'status': 'INTERNAL', 'message': 'INTERNAL'}}))
+        route.fulfill(status=200, headers=hdr, content_type='application/json', body=json.dumps({'result': self.answer}))
+
+    def wait(self, a, n, ms=5000):
+        t = time.time() + ms / 1000
+        while len(self.calls) < n and time.time() < t: a.pg.wait_for_timeout(100)
+        return len(self.calls) >= n
+
+
+def login(a, uid):  # accesso all'account SopraLux simulato (nell'app vera lo fa FirebaseAccount con Apple o Google)
+    a.js("""uid => { FirebaseAccount.hidden = () => false; FirebaseAccount.ready = true;
+        FirebaseAccount.auth = { currentUser: uid ? { uid, getIdToken: async () => 'tok-' + uid } : null }; FirebaseAccount.user = FirebaseAccount.auth.currentUser; Lic.onAccount(); }""", uid)
+
+
+def t_account(br, sv, prova, png):
+    print('9. Acquisti sull\'account SopraLux: verifica sul server, altro dispositivo, uscita, scadenza')
+    fut = int(time.time() * 1000) + 30 * 86400000
+    # iPad: transazioni firmate al server, prodotti dell'account sommati a quelli dello store
+    a = App(br, sv, prova, 'ios', {'products': products('ios'), 'owned': owned('ios', 'dxf'), 'env': 'Sandbox'})
+    fn = FakeFn(a, {'prodotti': {PRE + 'misura': {'scade': None, 'store': 'google', 'prova': False}}, 'altroAccount': 0})
+    a.pg.wait_for_timeout(300)
+    check(not fn.calls and not a.js("Lic.can('misura')"), 'senza accesso all\'account nessuna chiamata al server')
+    login(a, 'anna'); fn.wait(a, 1); a.pg.wait_for_function("Lic.can('misura')", timeout=5000)
+    c = fn.calls[-1] if fn.calls else {}
+    check(c.get('auth') == 'Bearer tok-anna' and c.get('data') == {'apple': ['jws.' + PRE + 'dxf']}, f'iPad: al server vanno il gettone dell\'account e le transazioni firmate da Apple: {c}')
+    check(a.js("Lic.can('dxf') && Lic.can('misura') && !Lic.can('foto')"), 'iPad: lo sblocco comprato sull\'altro dispositivo vale anche qui')
+    check(a.js("JSON.parse(localStorage.getItem('ril_ui_licAcc')).uid") == 'anna', 'la risposta del server resta sul dispositivo (anche senza rete)')
+    a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
+    check('legati al tuo account SopraLux' in a.pg.inner_text('#licBox'), 'la schermata dice che gli acquisti seguono l\'account')
+    n = len(fn.calls); a.buy('foto'); c = a.last_call('purchaseProduct'); fn.wait(a, n + 1)
+    check(c and c.get('appAccountToken') == gettone('anna'), f'iPad: l\'acquisto porta il gettone dell\'account (appAccountToken): {c and c.get("appAccountToken")}')
+    check(fn.calls and 'jws.' + PRE + 'foto' in fn.calls[-1]['data']['apple'], 'dopo l\'acquisto la nuova transazione va subito al server')
+    fn.answer = {'prodotti': {PRE + 'misura': {'scade': None}}, 'altroAccount': 1}; n = len(fn.calls)
+    a.js("Lic.syncAccount(true)"); fn.wait(a, n + 1); a.pg.wait_for_timeout(200)
+    check('appartiene a un altro account SopraLux' in a.pg.inner_text('#licBox'), 'acquisto di questo ID Apple già legato a un altro account: la schermata lo dice')
+    login(a, None); a.pg.wait_for_timeout(200)
+    check(a.js("!Lic.can('misura') && Lic.can('dxf') && Lic.can('foto') && localStorage.getItem('ril_ui_licAcc') === 'null'"), 'uscita dall\'account: restano solo gli acquisti dello store di questo dispositivo')
+    check('Entra nel tuo account SopraLux' in a.pg.inner_text('#licBox'), 'senza accesso la schermata invita a entrare nell\'account')
+    a.close_modal(); check(not a.errs, f'nessun errore in console: {a.errs[:3]}'); a.close()
+    # Android: abbonamento dell'account (comprato su iPad), ultimo stato noto all'avvio, cambio di account
+    cache = {'uid': 'bruno', 'prodotti': {PRE + 'pro_mese': {'scade': fut, 'store': 'apple', 'prova': True}}, 'altro': 0, 't': 1}
+    a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': []}, storage={'ril_ui_licAcc': cache})
+    fn = FakeFn(a, {'prodotti': {PRE + 'pro_mese': {'scade': fut, 'store': 'apple', 'prova': True}}, 'altroAccount': 0})
+    check(a.js("Lic.plan() === 'pro'"), 'all\'avvio vale l\'ultimo stato dell\'account, prima che il server risponda')
+    login(a, 'bruno'); fn.wait(a, 1); a.pg.wait_for_timeout(200)
+    check(fn.calls and fn.calls[-1]['data'] == {'apple': []} and a.js("Lic.plan() === 'pro' && Lic.can('stanze')"), f'Android: il Pro comprato su iPad vale anche qui ({fn.calls[-1]["data"] if fn.calls else None})')
+    a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
+    a.pg.click(f'#licBox [data-buy="{PRE}pro_anno"]'); a.pg.wait_for_timeout(300)
+    check('già l\'abbonamento Pro' in a.pg.inner_text('#modal'), 'comprare un secondo abbonamento: prima un avviso')
+    a.pg.click('#modal [data-a="0"]'); a.pg.wait_for_timeout(300)
+    check(a.last_call('purchaseProduct') is None and a.lic_open(), 'avviso annullato: nessun acquisto, si torna a «Piani e sblocchi»')
+    a.close_modal()
+    fn.answer = {'prodotti': {}, 'altroAccount': 0}; login(a, 'carla'); fn.wait(a, 2); a.pg.wait_for_timeout(200)
+    check(a.js("Lic.plan() === 'base'"), 'cambio di account: gli acquisti del vecchio account non valgono più')
+    check(not a.errs, f'nessun errore in console: {a.errs[:3]}'); a.close()
+    # abbonamento scaduto nell'ultimo stato noto; server che non risponde
+    old = dict(cache, prodotti={PRE + 'pro_mese': {'scade': 1000, 'store': 'apple'}, PRE + 'misura': {'scade': None}})
+    a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': []}, storage={'ril_ui_licAcc': old})
+    fn = FakeFn(a, 500)
+    check(a.js("Lic.plan() === 'base' && Lic.can('misura')"), 'abbonamento dell\'account scaduto: non conta, lo sblocco sì')
+    login(a, 'bruno'); fn.wait(a, 1); a.pg.wait_for_timeout(300)
+    check(a.js("Lic.can('misura')"), 'server non raggiungibile: resta l\'ultimo stato noto')
+    check(not [e for e in a.errs if 'verificaAcquisti' not in e and 'CORS' not in e], f'nessun errore in console: {a.errs[:3]}'); a.close()
+
+
 def main():
     if not os.path.exists(os.path.join(REPO, 'app', 'node_modules', '@capacitor', 'core')): sys.exit('Prima eseguire npm ci nella cartella app')
     prova, store_build, pwa, claude = build('app', 'prova'), build('app', 'store'), build('pwa'), build('claude')
@@ -472,7 +555,8 @@ def main():
         br = p.chromium.launch(executable_path=CHROME, headless=True, args=['--no-sandbox']) if CHROME else p.chromium.launch(headless=True)
         only = sys.argv[1:]
         tests = [('1', lambda: t_base(br, sv, prova, png)), ('2', lambda: t_buy_android(br, sv, prova, png)), ('3', lambda: t_states(br, sv, prova, png)), ('4', lambda: t_ios(br, sv, prova, png)),
-                 ('5', lambda: t_test_mode(br, sv, prova, store_build, png)), ('6', lambda: t_unlocks(br, sv, prova, png)), ('7', lambda: t_other_builds(br, sv, pwa, claude, png)), ('8', lambda: t_work(br, sv, prova, pwa, png))]
+                 ('5', lambda: t_test_mode(br, sv, prova, store_build, png)), ('6', lambda: t_unlocks(br, sv, prova, png)), ('7', lambda: t_other_builds(br, sv, pwa, claude, png)), ('8', lambda: t_work(br, sv, prova, pwa, png)),
+                 ('9', lambda: t_account(br, sv, prova, png))]
         for k, fn in tests:
             if only and k not in only: continue
             try: fn()

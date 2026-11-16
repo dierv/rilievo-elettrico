@@ -4,8 +4,11 @@
 // I blocchi valgono solo nell'app degli store (build_app.sh scrive LIC_ENFORCE): nella PWA e in Claude è tutto aperto.
 // Da dove arrivano gli acquisti:
 //   - store del dispositivo, Google Play o App Store (LicStore, in native_acquisti.js);
+//   - account SopraLux: con l'accesso fatto, l'app manda al server le transazioni firmate dallo store e il server
+//     risponde con i prodotti attivi dell'account, anche quelli comprati sull'altro tipo di dispositivo
+//     (funzione verificaAcquisti, firebase/functions/acquisti.js). L'ultima risposta resta sul dispositivo;
 //   - acquisti simulati, solo nelle build di prova (APP_CHANNEL 'prova'; su iPad solo nell'ambiente di prova di Apple).
-// Il passaggio degli acquisti sull'account SopraLux (Android ↔ iPad) si aggiunge qui, con la verifica sul server.
+// Oggi il server verifica le transazioni di Apple; quelle di Google Play si aggiungono dopo il passaggio dell'app all'account della SRL.
 // I codici prodotto sono gli stessi nei due store: LIC_PRE + codice (elenco in docs/ACQUISTI.md).
 const LIC_PRE = 'sopralux_';
 const LIC_UNLOCKS = [
@@ -43,11 +46,21 @@ const LIC_SOON_TXT = { pro: 'Archivio sul server e sincronizzazione: in arrivo.'
 const LIC_URL = { privacy: 'https://dierv.github.io/rilievo-elettrico/privacy.html', terms: 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/', help: 'https://dierv.github.io/rilievo-elettrico/supporto.html' };
 const LIC_LOCK = '<svg class="lki" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.5A1.5 1.5 0 0 1 20 11.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7zm2 0h6V7a3 3 0 0 0-6 0v3z"/></svg>';
 const licEur = v => { const [i, d] = v.toFixed(2).split('.'); return '€' + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d; };
+const LIC_FN = 'https://europe-west1-sopralux-64b29.cloudfunctions.net/verificaAcquisti'; // funzione «callable» di Firebase, chiamata senza SDK
+const licUser = () => { try { return (typeof FirebaseAccount !== 'undefined' && FirebaseAccount.auth && FirebaseAccount.auth.currentUser) || null; } catch (e) { return null; } };
+async function licGettone(uid) { // appAccountToken di Apple: UUID ricavato dall'uid, stessa formula del server (gettoneAccount in acquisti.js)
+  try {
+    const b = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sopralux:' + uid)));
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  } catch (e) { return null; }
+}
 
 const Lic = {
   on: typeof LIC_ENFORCE !== 'undefined' && !!LIC_ENFORCE, // blocchi attivi (app degli store)
   channel: typeof APP_CHANNEL !== 'undefined' ? APP_CHANNEL : 'store', // 'prova' (APK di prova, TestFlight) o 'store'
   storeIds: [], simIds: [], // prodotti posseduti: dallo store del dispositivo, simulati
+  acc: null, accKey: '', accAt: 0, accBusy: false, accBusyKey: '', accP: null, accAgain: false, // account SopraLux: { uid, prodotti: { codice: { scade, store, prova } }, altro, t }
   sandbox: null, // iPad: true nell'ambiente di prova di Apple (TestFlight), false nell'App Store
   prices: null, pricesAt: 0, priceErr: '', loading: false, busy: null, focus: null, started: false,
 
@@ -56,13 +69,22 @@ const Lic = {
     const c = UIP.get('licStore', null); this.storeIds = c && Array.isArray(c.ids) ? c.ids.filter(p => LIC_SKUS[p]) : [];
     const s = UIP.get('licSim', []); this.simIds = Array.isArray(s) ? s.filter(p => LIC_SKUS[p]) : [];
     this.sandbox = UIP.get('licSb', null) === true ? true : null; // iPad: ultimo ambiente visto (si ricontrolla aprendo «Piani e sblocchi»)
+    const a = UIP.get('licAcc', null); this.acc = a && typeof a.uid === 'string' && a.prodotti && typeof a.prodotti === 'object' ? a : null;
+  },
+  // Prodotti attivi dell'account SopraLux aperto (ultima risposta del server; gli abbonamenti valgono fino alla scadenza)
+  accIds() {
+    const a = this.acc; if (!a) return [];
+    const u = licUser(); if (u && u.uid !== a.uid) return []; // prima della risposta del server: si usa l'ultimo stato del suo stesso account
+    if (!u && typeof FirebaseAccount !== 'undefined' && FirebaseAccount.ready) return []; // uscito dall'account
+    const now = Date.now();
+    return Object.keys(a.prodotti).filter(p => LIC_SKUS[p] && (!a.prodotti[p].scade || a.prodotti[p].scade > now));
   },
   api() { return typeof LicStore !== 'undefined' && LicStore.ok() ? LicStore : null; },
   platform() { try { return window.Capacitor && window.Capacitor.getPlatform ? window.Capacitor.getPlatform() : 'web'; } catch (e) { return 'web'; } },
   storeName() { return this.platform() === 'ios' ? 'App Store' : this.platform() === 'android' ? 'Google Play' : 'store'; },
   // Acquisti simulati: mai nelle build per lo store. Su iPad anche la build di prova li accetta solo nell'ambiente di prova di Apple.
   testOk() { return this.on && this.channel === 'prova' && (this.platform() !== 'ios' || this.sandbox === true); },
-  ids() { return new Set(this.testOk() ? this.storeIds.concat(this.simIds) : this.storeIds); },
+  ids() { const own = this.storeIds.concat(this.accIds()); return new Set(this.testOk() ? own.concat(this.simIds) : own); },
   has(pid) { return this.ids().has(pid); },
   plan() { // piano attivo: il più alto fra quelli posseduti
     if (!this.on) return 'studio10';
@@ -96,14 +118,53 @@ const Lic = {
     const was = this.testOk(); this.sandbox = sb; UIP.set('licSb', sb);
     if (was !== this.testOk()) this.changed(); else this.render();
   },
-  async refresh() { // rilegge dallo store che cosa è posseduto su questo dispositivo
+  async refresh(force = false) { // rilegge dallo store che cosa è posseduto su questo dispositivo, poi lo verifica sull'account
     const st = this.api(); if (!st) return false;
     try {
       const ids = (await st.owned()).filter(p => LIC_SKUS[p]).sort(); const old = this.storeIds.slice().sort();
       this.storeIds = ids; UIP.set('licStore', { ids, t: Date.now() });
       if (ids.join() !== old.join()) this.changed();
+      this.syncAccount(force);
       return true;
-    } catch (e) { console.warn('acquisti: lettura non riuscita', e); return false; }
+    } catch (e) { console.warn('acquisti: lettura non riuscita', e); this.syncAccount(force); return false; }
+  },
+  // Account SopraLux: manda al server le transazioni firmate (iPad) e riceve i prodotti attivi dell'account.
+  // Si ripete solo se cambiano account o transazioni, oppure dopo 10 minuti (force: subito, per esempio dopo un acquisto).
+  async syncAccount(force = false) {
+    if (!this.on) return;
+    const u = licUser();
+    if (!u) { // uscito dall'account: i suoi acquisti non valgono più su questo dispositivo (quelli dello store sì)
+      if (this.acc && typeof FirebaseAccount !== 'undefined' && FirebaseAccount.ready) { const had = Object.keys(this.acc.prodotti).length; this.acc = null; this.accKey = ''; UIP.set('licAcc', null); if (had) this.changed(); }
+      return;
+    }
+    const st = this.api(), apple = st && st.platform() === 'ios' ? (st.jws || []).slice() : [];
+    const key = u.uid + '|' + apple.join('|');
+    if (this.accBusy) { if (force || key !== this.accBusyKey) this.accAgain = true; return this.accP; } // già in corso: si aspetta quella (e, se serve, si ripete dopo)
+    if (!navigator.onLine) return;
+    if (!force && key === this.accKey && Date.now() - this.accAt < 10 * 60000) return;
+    this.accBusy = true; this.accBusyKey = key;
+    return (this.accP = this.askAccount(u, apple, key));
+  },
+  async askAccount(u, apple, key) {
+    try {
+      const token = await u.getIdToken();
+      const r = await fetch(LIC_FN, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data: { apple } }) });
+      let j = null; try { j = await r.json(); } catch (e) { }
+      if (!r.ok || !j || !j.result) throw new Error((j && j.error && j.error.message) || 'risposta ' + r.status);
+      const cur = licUser(); if (!cur || cur.uid !== u.uid) return; // nel frattempo è cambiato account
+      const before = this.accIds().sort().join();
+      const prodotti = {}; for (const [p, v] of Object.entries(j.result.prodotti || {})) if (LIC_SKUS[p] && v) prodotti[p] = { scade: Number(v.scade) || null, store: v.store || '', prova: !!v.prova };
+      this.acc = { uid: u.uid, prodotti, altro: Number(j.result.altroAccount) || 0, t: Date.now() }; UIP.set('licAcc', this.acc);
+      this.accKey = key; this.accAt = Date.now();
+      if (this.accIds().sort().join() !== before) this.changed(); else this.render();
+    } catch (e) { console.warn('acquisti dell\'account: verifica non riuscita', e); }
+    finally { this.accBusy = false; if (this.accAgain) { this.accAgain = false; setTimeout(() => this.syncAccount(true), 0); } }
+  },
+  onAccount() { // l'accesso all'account è cambiato (FirebaseAccount)
+    if (!this.on) return;
+    if (!licUser()) { this.syncAccount(); return; }
+    if (this.acc && this.acc.uid !== licUser().uid) { this.acc = null; this.accKey = ''; UIP.set('licAcc', null); this.changed(); }
+    this.syncAccount(true);
   },
   changed() { // gli sblocchi sono cambiati: si ridisegna quello che dipende da loro
     try {
@@ -139,14 +200,20 @@ const Lic = {
       const go = await askConfirm(`Hai già l'abbonamento ${cur.name}. Su Android per cambiare piano disdici quello attuale da Google Play: alla scadenza scegli il nuovo.`, 'Apri Google Play');
       if (go) st.manage().catch(() => { }); this.open(this.focus); return;
     }
+    const accPlan = this.accIds().map(p => LIC_SKUS[p]).find(s => s && s.plan && !this.storeIds.includes(s.pid));
+    if (sku.plan && accPlan) { // abbonamento già sull'account, comprato con l'altro store: si evita di pagarne due
+      const go = await askConfirm(`Il tuo account SopraLux ha già l'abbonamento ${accPlan.name}, comprato su un altro dispositivo: vale anche qui. Vuoi comunque comprare un altro abbonamento?`, 'Compra lo stesso');
+      this.open(this.focus); if (!go) return;
+    }
     this.busy = pid; this.render();
     try {
-      await st.buy(sku, this.info(pid));
-      await this.refresh();
+      const u = licUser(), gettone = u && this.platform() === 'ios' ? await licGettone(u.uid) : null;
+      await st.buy(sku, this.info(pid), gettone);
+      await this.refresh(true);
       toast(this.has(pid) ? `Acquisto completato: «${sku.name}» è attivo.` : 'Acquisto registrato: si attiva appena lo store lo conferma.', false, 6000);
     } catch (e) {
       const k = st.errKind(e);
-      if (k === 'owned') { await this.refresh(); toast(`«${sku.name}» era già tuo: attivato.`); }
+      if (k === 'owned') { await this.refresh(true); toast(`«${sku.name}» era già tuo: attivato.`); }
       else if (k === 'pending') toast('Acquisto in attesa di approvazione: si attiva da solo quando viene confermato.', false, 7000);
       else if (k === 'missing') toast(`«${sku.name}» non è ancora in vendita su ${this.storeName()}.`, true, 6000);
       else if (k !== 'cancel') toast('Acquisto non riuscito: ' + ((e && e.message) || e), true, 7000);
@@ -157,9 +224,9 @@ const Lic = {
     const st = this.api(); if (!st || this.busy) return;
     this.busy = 'restore'; this.render();
     try { await st.restore(); } catch (e) { if (st.errKind(e) !== 'cancel') console.warn('ripristino', e); }
-    const ok = await this.refresh();
+    const ok = await this.refresh(true); await this.accP;
     this.busy = null; this.render();
-    toast(!ok ? 'Ripristino non riuscito: controlla la connessione e riprova.' : this.storeIds.length ? 'Acquisti ripristinati.' : `Nessun acquisto trovato su questo account ${this.storeName()}.`, !ok, 6000);
+    toast(!ok ? 'Ripristino non riuscito: controlla la connessione e riprova.' : this.storeIds.length || this.accIds().length ? 'Acquisti ripristinati.' : `Nessun acquisto trovato su questo account ${this.storeName()}.`, !ok, 6000);
   },
   sim(pid) { // build di prova: accende o spegne un acquisto senza passare dallo store
     if (!this.testOk() || !LIC_SKUS[pid]) return;
@@ -227,6 +294,7 @@ const Lic = {
       <div class="mut small" style="margin-top:8px">Gli abbonamenti si rinnovano da soli, allo stesso prezzo, finché non li disdici dalle impostazioni del tuo account ${store} (almeno 24 ore prima della scadenza). Se l'abbonamento scade i tuoi dati restano leggibili, il backup resta gratis e gli sblocchi comprati restano tuoi.</div>
       <div class="sech">Memoria in più <span class="mut small" style="font-weight:400">con Pro o Studio</span></div>
       <div class="licl">${mem}</div><div class="mut small" style="margin-top:4px">${esc(LIC_SOON_TXT.mem)}</div>
+      ${st && this.accOk() ? `<div class="small mut" id="licAccLine" style="margin-top:10px">${esc(this.accText())}</div>` : ''}
       <div class="acts" style="justify-content:flex-start">
         ${st ? `<button data-a="restore"${this.busy ? ' disabled' : ''}>${this.busy === 'restore' ? 'Ripristino…' : 'Ripristina acquisti'}</button>` : ''}
         ${st && subOn ? '<button data-a="manage">Gestisci abbonamento</button>' : ''}
@@ -234,6 +302,13 @@ const Lic = {
         ${this.platform() === 'ios' ? `<a class="small" href="${LIC_URL.terms}" target="_blank" rel="noopener">Condizioni d'uso</a>` : ''}
         <a class="small" href="${LIC_URL.privacy}" target="_blank" rel="noopener">Privacy</a>
         <button class="pri" data-a="close">Chiudi</button></div>`;
+  },
+  accOk() { try { return typeof FirebaseAccount !== 'undefined' && !FirebaseAccount.hidden(); } catch (e) { return false; } }, // c'è l'accesso all'account in questa app
+  accText() {
+    if (!licUser()) return 'Entra nel tuo account SopraLux (con Apple o con Google) per usare gli acquisti su tutti i tuoi dispositivi.';
+    const n = (this.acc && this.acc.altro) || 0;
+    return 'Gli acquisti sono legati al tuo account SopraLux e valgono su tutti i tuoi dispositivi.'
+      + (n ? ` ${n === 1 ? 'Un acquisto' : n + ' acquisti'} di questo account ${this.storeName()} ${n === 1 ? 'appartiene' : 'appartengono'} a un altro account SopraLux: su questo dispositivo ${n === 1 ? 'vale' : 'valgono'} lo stesso.` : '');
   },
   render() {
     const box = document.querySelector('#licBox'); if (!box) return;
