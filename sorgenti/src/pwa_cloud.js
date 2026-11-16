@@ -1,6 +1,6 @@
-/* ============ SINCRONIZZAZIONE PWA: archivio privato per account ============ */
-// Questo modulo è incluso soltanto nella PWA. Le capacità e i salvataggi Claude
-// rimangono quelli originali. Anche offline il database resta legato all'account
+/* ============ SINCRONIZZAZIONE: archivio privato per account ============ */
+// Questo modulo è incluso nella PWA e nell'app degli store (dove il server si usa solo con il Pro:
+// allowed(), licChanged()). Le capacità e i salvataggi Claude rimangono quelli originali. Anche offline il database resta legato all'account
 // scelto all'avvio; cambiare account richiede un riavvio dopo il salvataggio locale.
 const PwaCloud = {
   uid: null, dbName: null, prepared: false, started: false, switching: false,
@@ -406,25 +406,49 @@ const PwaCloud = {
     }
     this.refresh();
   },
+  // App degli store (Lic.on): l'archivio sul server c'è solo con il Pro (o Studio). Senza, i dati restano
+  // nell'archivio locale dell'account e nella cartella del dispositivo. Nella PWA e in Claude vale sempre.
+  allowed() { return typeof Lic === 'undefined' || !Lic.on || Lic.can('sync'); },
   async start() {
     if (this.started || !this.prepared) return;
     this.started = true;
     await this.captureAll();
     if ((FirebaseAccount.user?.uid || null) !== this.uid) { this.accountChanged(); return; }
     if (!this.uid) { this.refresh(); return; }
-    let deviceId = KV.get('cloudDeviceId');
-    if (!deviceId) { deviceId = uid('device_'); this.setting('cloudDeviceId', deviceId); }
-    const backend = CloudBackend.open({ app: FirebaseAccount.app, uid: this.uid, deviceId, isCurrent: () => this.current(), readLocalBlob: file => this.readLocalBlob(file) });
-    this.remote = { ...backend, watchHeads: (next, onError) => backend.watchHeads((heads, metadata) => {
-        if (!metadata?.fromCache) this.serverSeen = true;
-        next(heads, metadata); this.refresh();
-      }, onError) };
-    this.local = { listIds: async () => (await IDB.all('cloud')).map(row => row.id), read: id => IDB.get('cloud', id).then(value => value || null), commit: (id, version, patch, guard) => this.localCommit(id, version, patch, guard) };
-    this.engine = new CloudSyncEngine({ local: this.local, remote: this.remote, isCurrent: () => this.current(), isOnline: () => navigator.onLine, onState: state => { this.statusValue = state; if (!state.error && state.phase === 'idle' && !this.captureWanted.size) this.error = ''; this.refresh(); }, onError: error => { this.error = this.message(error); this.refresh(); } });
-    await this.engine.start();
-    window.addEventListener('online', () => this.syncNow());
-    window.addEventListener('offline', () => this.refresh());
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && this.current()) this.syncNow(); });
+    await this.startRemote();
+  },
+  async startRemote() { // collegamento al server: all'avvio, o quando arriva il Pro
+    if (this.engine || this.remoteStarting || !this.started || !this.uid || this.switching || !this.allowed() || !this.current()) { this.refresh(); return; }
+    this.remoteStarting = true;
+    try {
+      let deviceId = KV.get('cloudDeviceId');
+      if (!deviceId) { deviceId = uid('device_'); this.setting('cloudDeviceId', deviceId); }
+      const backend = CloudBackend.open({ app: FirebaseAccount.app, uid: this.uid, deviceId, isCurrent: () => this.current(), readLocalBlob: file => this.readLocalBlob(file) });
+      this.remote = { ...backend, watchHeads: (next, onError) => backend.watchHeads((heads, metadata) => {
+          if (!metadata?.fromCache) this.serverSeen = true;
+          next(heads, metadata); this.refresh();
+        }, onError) };
+      this.local = { listIds: async () => (await IDB.all('cloud')).map(row => row.id), read: id => IDB.get('cloud', id).then(value => value || null), commit: (id, version, patch, guard) => this.localCommit(id, version, patch, guard) };
+      this.engine = new CloudSyncEngine({ local: this.local, remote: this.remote, isCurrent: () => this.current(), isOnline: () => navigator.onLine, onState: state => { this.statusValue = state; if (!state.error && state.phase === 'idle' && !this.captureWanted.size) this.error = ''; this.refresh(); }, onError: error => { this.error = this.message(error); this.refresh(); } });
+      await this.engine.start();
+      if (!this.listening) {
+        this.listening = true;
+        window.addEventListener('online', () => this.syncNow());
+        window.addEventListener('offline', () => this.refresh());
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && this.current()) this.syncNow(); });
+      }
+    } finally { this.remoteStarting = false; this.refresh(); }
+  },
+  stopRemote() { // il Pro è finito: niente più scambi con il server, i dati restano sul dispositivo
+    if (!this.engine && !this.remote) return;
+    this.engine?.stop(); this.remote?.close();
+    this.engine = null; this.remote = null; this.serverSeen = false; this.statusValue = {}; this.error = '';
+    this.refresh();
+  },
+  licChanged() { // chiamata da Lic quando cambiano piani e sblocchi
+    if (!this.prepared || !this.started || this.switching) return;
+    if (this.allowed()) this.startRemote().catch(error => { this.error = this.message(error); this.refresh(); });
+    else this.stopRemote();
   },
   async syncNow() {
     if (this.switching && !this.localError) return;
@@ -485,7 +509,8 @@ Object.assign(PwaCloud, {
     const pending = (state.pending || 0) + this.captureWanted.size + Sync.pending();
     if (this.switching) return { text: this.localError || 'Salvo i dati prima del cambio account…', style: this.localError ? 'bad' : 'grey' };
     if (this.localError || Sync.err) return { text: this.localError || Sync.err, style: 'bad' };
-    if (!this.uid) return { text: 'Salvato su questo dispositivo. Accedi per ritrovare gli impianti sugli altri dispositivi.', style: 'grey' };
+    if (!this.uid) return { text: typeof Lic !== 'undefined' && Lic.on ? 'Salvato su questo dispositivo.' : 'Salvato su questo dispositivo. Accedi per ritrovare gli impianti sugli altri dispositivi.', style: 'grey' };
+    if (!this.allowed()) return { text: 'Salvato su questo dispositivo. L’archivio sul server e gli altri dispositivi sono compresi nel Pro.', style: 'grey' };
     if (state.conflicts) return { text: `${state.conflicts} impianti da decidere`, style: 'warn' };
     if (!navigator.onLine) return { text: `Offline: modifiche in coda (${pending})`, style: 'warn' };
     if (this.error || state.error) return { text: this.error || this.message(state.error), style: 'bad' };
@@ -500,7 +525,7 @@ Object.assign(PwaCloud, {
     const button = account.buttonsHtml(!!disabled);
     return `<div class="row wrap" style="gap:10px"><b style="flex:1;min-width:160px;overflow-wrap:anywhere">${esc(label)}</b><div class="row wrap authbs">${button}</div></div>
       <div class="small" role="status" style="margin-top:8px"><span class="chip ${status.style}">${esc(status.text)}</span></div>
-      ${signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
+      ${signed && !this.allowed() && !this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbPro">Piani e sblocchi</button></div>` : signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
       ${this.migrationNotice ? `<div class="small mut" style="margin-top:6px">${esc(this.migrationNotice)}</div>` : ''}
       ${account.error ? `<div class="small" style="color:var(--bad);margin-top:6px">${esc(account.error)}</div>` : ''}`;
   },
@@ -509,6 +534,7 @@ Object.assign(PwaCloud, {
     FirebaseAccount.wireButtons();
     bind('fbSyncNow', () => this.syncNow().catch(error => { this.error = this.message(error); this.refresh(); }));
     bind('fbConflicts', () => this.showConflicts());
+    bind('fbPro', () => Lic.open('sync'));
   },
   async showConflicts() {
     if (!this.engine) return;

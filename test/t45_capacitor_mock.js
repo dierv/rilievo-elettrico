@@ -1,6 +1,7 @@
 // Capacitor finto per le prove dell'app nativa nel browser (t45_acquisti.py): prende il posto di lib/capacitor.js.
 // La configurazione arriva da window.__CAP (messa dalla prova prima del caricamento):
 //   platform: 'android' | 'ios' | 'web'
+//   auth:     true = c'è il plugin dell'accesso (FirebaseAuthentication)
 //   store:    null (nessun plugin acquisti) oppure { products: [...], owned: [...], restorable: [...], env: 'Sandbox'|'Production',
 //             buy: 'ok'|'cancel'|'pending'|'owned', failOwned: bool }   (oggetti come li restituisce @capgo/native-purchases)
 (() => {
@@ -26,6 +27,9 @@
   };
   const App = { addListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); return Promise.resolve({ remove() { } }); }, minimizeApp() { } };
   const plugins = { Filesystem, Share: { async share(o) { calls.push(['share', o]); } }, App };
+  if (cfg.auth) plugins.FirebaseAuthentication = { // accesso Apple/Google: con la prova t47 l'account è già aperto nel Firebase finto
+    async signInWithGoogle() { return { credential: { idToken: 'id-google' } }; }, async signInWithApple() { return { credential: { idToken: 'id-apple', nonce: 'n' } }; }, async signOut() { },
+  };
 
   if (st) {
     st.owned = st.owned || []; let n = 0;

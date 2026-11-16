@@ -64,7 +64,7 @@ Verifiche sul progetto reale del **9 novembre 2026**:
 | Firestore | Database `(default)`, modalità Native, edizione Standard, regione `europe-west8` |
 | Storage | Bucket `sopralux-64b29.firebasestorage.app`, posizione `EUROPE-WEST8`, classe restituita dall'API `REGIONAL` |
 | Regole | `firebase/firestore.rules` e `firebase/storage.rules`, validate, pubblicate e rilette identiche ai file del repository |
-| CORS | Applicato e riletto identico a `firebase/cors.json`; origine `https://dierv.github.io`, metodo `GET`, cache 3600 secondi |
+| CORS | `firebase/cors.json`: origini `https://dierv.github.io` (PWA), `capacitor://localhost` (app iPad) e `https://localhost` (app Android), metodo `GET`, cache 3600 secondi. Si applica da Cloud Shell con `sh ~/rilievo-elettrico/firebase/cors.sh` |
 
 Il bucket è passato da CORS vuoto e `metageneration: 1` alla configurazione prevista e `metageneration: 2`. Non sono stati creati nuovi servizi o cambiati piano di fatturazione e regioni. L'hosting dell'app resta su GitHub Pages.
 
@@ -80,7 +80,7 @@ npx --yes firebase-tools@15.35.0 deploy --only firestore:rules,storage --project
 
 ### CORS per scaricare foto e audio
 
-L'SDK `getBlob` richiede CORS sul bucket anche quando l'accesso è autenticato. La configurazione di `firebase/cors.json` è stata applicata e verificata: autorizza soltanto l'origine attuale della PWA. L'origine non include `/rilievo-elettrico/`.
+L'SDK `getBlob` richiede CORS sul bucket anche quando l'accesso è autenticato. La configurazione di `firebase/cors.json` è stata applicata e verificata: autorizza l'origine della PWA e quelle dell'app degli store (dal 16/11/2026: la sincronizzazione c'è anche nell'app, con il Pro). L'origine non include `/rilievo-elettrico/`.
 
 Per eventuali aggiornamenti, con gli strumenti Google Cloud già autorizzati:
 

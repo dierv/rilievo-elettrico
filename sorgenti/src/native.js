@@ -1,5 +1,6 @@
 /* ============ APP NATIVA SopraLux (Capacitor, Android e iOS) ============
-   I sopralluoghi restano sul dispositivo: niente sincronizzazione e niente service worker.
+   I sopralluoghi restano sul dispositivo; con il Pro e l'accesso all'account si sincronizzano anche sul server
+   (pwa_cloud*.js, gli stessi moduli della PWA; PwaCloud.allowed() in pwa_cloud.js). Niente service worker.
    Account (Apple o Google) da pwa_firebase.js, solo se nell'app c'è il plugin FirebaseAuthentication.
    Archivio automatico nella cartella Documenti/SopraLux (Android: app File → Documenti; iPad: app File → Sul mio iPad → SopraLux).
    Piani e sblocchi: 01b_lic.js (che cosa è attivo) e native_acquisti.js (acquisti di Google Play e App Store).

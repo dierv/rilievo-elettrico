@@ -42,7 +42,7 @@ const LIC_FEAT = {
   stanze: ['Stanze', 'p'], simboli: ['Simboli e legenda', 'p'], controllo: ['Controllo e chiusura del sopralluogo', 'p'], computo: ['Computo ed esportazioni DXF, CSV e ZIP', 'p'], ai: ['Riconoscimento AI', 'p'], sync: ['Sincronizzazione su più dispositivi', 'p'],
 };
 const LIC_SOON = ['studio3', 'studio10', 'mem50', 'mem200', 'mem500']; // non ancora in vendita: nelle build per lo store non si comprano
-const LIC_SOON_TXT = { pro: 'Archivio sul server e sincronizzazione: in arrivo.', studio: 'Sopralluoghi condivisi: in arrivo.', mem: 'Lo spazio sul server è in arrivo.' };
+const LIC_SOON_TXT = { pro: 'Con l\'accesso al tuo account SopraLux i sopralluoghi si salvano anche sul server e li ritrovi sugli altri tuoi dispositivi.', studio: 'Sopralluoghi condivisi: in arrivo.', mem: 'Lo spazio sul server è in arrivo.' };
 const LIC_URL = { privacy: 'https://dierv.github.io/rilievo-elettrico/privacy.html', terms: 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/', help: 'https://dierv.github.io/rilievo-elettrico/supporto.html' };
 const LIC_LOCK = '<svg class="lki" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.5A1.5 1.5 0 0 1 20 11.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7zm2 0h6V7a3 3 0 0 0-6 0v3z"/></svg>';
 const licEur = v => { const [i, d] = v.toFixed(2).split('.'); return '€' + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d; };
@@ -175,6 +175,7 @@ const Lic = {
         const P = curPlan(); if (P && planIsDxf(P)) loadPlanImage(P.id, true).then(redraw, () => { }); else redraw();
       } else if (typeof renderHome === 'function' && typeof S !== 'undefined' && typeof S.remoteOk !== 'undefined' && $('#home') && !$('#home').classList.contains('hide')) renderHome(); // solo ad avvio finito
     } catch (e) { console.warn(e); }
+    if (typeof PwaCloud !== 'undefined' && PwaCloud.licChanged) PwaCloud.licChanged(); // archivio sul server: si accende o si spegne con il Pro
     this.render();
   },
 
