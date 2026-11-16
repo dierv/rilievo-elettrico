@@ -1,6 +1,6 @@
 # Acquisti SopraLux: piani, sblocchi e store
 
-Aggiornato il 15/11/2026. Prezzi e contenuti dei piani: «Versione vendibile – piano di lavoro» (progetto Claude «RILIEVI ELETTRICI»).
+Aggiornato il 16/11/2026. Prezzi e contenuti dei piani: «Versione vendibile – piano di lavoro» (progetto Claude «RILIEVI ELETTRICI»).
 
 ## Come funziona
 
@@ -8,7 +8,8 @@ Aggiornato il 15/11/2026. Prezzi e contenuti dei piani: «Versione vendibile –
 - **I blocchi valgono solo nell'app degli store.** `sorgenti/build_app.sh` scrive `LIC_ENFORCE = true`; nella versione installabile dal browser e in Claude è tutto aperto.
 - **Chi decide che cosa è attivo:** `sorgenti/src/01b_lic.js` (`Lic.can('misura')`, `Lic.need('misura')`, schermata «Piani e sblocchi»).
 - **Acquisti:** `sorgenti/src/native_acquisti.js`, plugin `@capgo/native-purchases` 8.9.16 (Play Billing 9.1 su Android, StoreKit 2 su iPad).
-- **Per ora un acquisto vale per l'account dello store** (Apple o Google) del dispositivo: l'app chiede allo store che cosa è posseduto, all'avvio e quando torna in primo piano. L'ultimo stato letto resta sul dispositivo, quindi in cantiere senza rete gli sblocchi restano.
+- **Un acquisto vale per l'account dello store** (Apple o Google) del dispositivo: l'app chiede allo store che cosa è posseduto, all'avvio e quando torna in primo piano. L'ultimo stato letto resta sul dispositivo, quindi in cantiere senza rete gli sblocchi restano.
+- **E vale anche sull'account SopraLux** (dal 16/11, per ora gli acquisti fatti su iPad): vedi «Acquisti sull'account SopraLux» qui sotto.
 - **Abbonamento scaduto:** i dati restano e si leggono, il backup resta gratis, gli sblocchi comprati restano.
 
 ### Che cosa sblocca che cosa
@@ -26,6 +27,23 @@ Aggiornato il 15/11/2026. Prezzi e contenuti dei piani: «Versione vendibile –
 | Stanze e Riquadro, simboli e libreria, controllo e chiusura, computo, esportazioni DXF/CSV/ZIP, AI | Abbonamento |
 
 Ogni sblocco è compreso anche in «Tutti gli sblocchi» e in tutti gli abbonamenti.
+
+## Acquisti sull'account SopraLux
+
+Così uno sblocco o un abbonamento comprato su un dispositivo vale anche sull'altro tipo di dispositivo (iPad ↔ Android), e il server sa chi ha il Pro.
+
+- **App** (`01b_lic.js`, `native_acquisti.js`): con l'accesso all'account fatto, dopo ogni lettura dello store (avvio, ritorno in primo piano, acquisto, ripristino) l'app chiama la funzione `verificaAcquisti` con le transazioni firmate dello store. Il server risponde con i prodotti attivi dell'account; l'app li somma a quelli dello store e tiene l'ultima risposta sul dispositivo (vale anche senza rete; gli abbonamenti fino alla scadenza). Senza accesso, o uscendo dall'account, valgono solo gli acquisti dello store del dispositivo. La chiamata si ripete solo se cambiano account o transazioni, o dopo 10 minuti.
+- **Acquisti su iPad con l'accesso fatto:** l'app passa ad Apple il «gettone» dell'account (`appAccountToken`, UUID ricavato dall'uid, stessa formula nell'app e sul server), che Apple scrive nella transazione firmata.
+- **Server** (`firebase/functions/acquisti.js`, regione europe-west1):
+  - `verificaAcquisti` (funzione «callable», chiamata dall'app senza SDK, con il gettone di accesso di Firebase). Per Apple controlla ogni JWS di StoreKit 2 senza chiavi né chiamate ad Apple: catena di certificati fino ad «Apple Root CA - G3» (impronta SHA-256 fissata nel codice), estensioni di Apple per le ricevute, firma ES256, app `it.diervsoft.sopralux`, prodotto del catalogo.
+  - `notificheApple`: App Store Server Notifications V2 (rinnovi, scadenze, rimborsi). Indirizzo `https://europe-west1-sopralux-64b29.cloudfunctions.net/notificheApple`, impostato il 16/11 in App Store Connect per produzione e prova (versione 2).
+  - Firestore `acquistiStore/apple_<originalTransactionId>`: account (uid), prodotto, ambiente, scadenza, rimborso, data della firma. Solo il server scrive; i dispositivi non leggono (regole: tutto negato).
+  - **Un acquisto appartiene a un solo account SopraLux:** al primo che lo registra. Passa a un altro account solo se è stato comprato da quell'account (gettone) o se il primo account non esiste più. Sul dispositivo con lo stesso account dello store vale comunque.
+  - Account eliminato: gli acquisti restano senza account (`uid` vuoto) e si possono registrare di nuovo.
+- **Acquisti dell'ambiente di prova di Apple** (TestFlight) contano come gli altri, segnati con `prova`: li fanno solo i tester.
+- **Google Play:** la verifica dei gettoni di acquisto si aggiunge dopo il trasferimento dell'app all'account della SRL (serve l'accesso dell'account di servizio delle funzioni in Play Console). Fino ad allora gli acquisti fatti su Android valgono solo su Android; quelli fatti su iPad valgono anche su Android.
+- **Pubblicazione delle funzioni:** in Cloud Shell `sh ~/rilievo-elettrico/firebase/pubblica_funzioni.sh` (aggiorna il codice, fa le prove, pubblica); controllo rapido: `sh ~/rilievo-elettrico/firebase/prova.sh`.
+- **Prove:** `cd firebase/functions && npm test` (12, con una catena di certificati di prova creata con openssl) e la sezione 9 di `test/t45_acquisti.py`.
 
 ## Prodotti da creare negli store
 
@@ -106,11 +124,11 @@ Fonti: [Android Developers – Test your Google Play Billing Library integration
 
 ## Che cosa manca prima di vendere
 
-1. **Acquisti sull'account SopraLux** (comprato su Android, vale sull'iPad): verifica delle ricevute sul server (Cloud Functions) e stato degli acquisti legato all'account. Per Google serve dare all'account di servizio delle funzioni l'accesso in Play Console; per Apple la firma delle transazioni si verifica senza chiavi.
+1. **Acquisti sull'account SopraLux:** fatto per Apple (16/11). Manca Google Play: verifica dei gettoni di acquisto con l'API di Google Play (account di servizio delle funzioni con accesso in Play Console), da fare dopo il trasferimento dell'app all'account della SRL.
 2. **Cambio di piano su Android:** il plugin non passa a Google Play la sostituzione di un abbonamento con un altro. Oggi l'app spiega di disdire e riabbonarsi alla scadenza. Va risolto prima di vendere più piani su Android.
 3. **Pro nell'app nativa:** sincronizzazione e archivio sul server (oggi ci sono solo nella versione installabile dal browser). Poi il limite di spazio e i pacchetti di memoria.
 4. **Studio:** sopralluoghi condivisi.
-5. **Notifiche degli store al server** (rinnovi, disdette, rimborsi).
+5. **Notifiche degli store al server** (rinnovi, disdette, rimborsi): Apple fatto (16/11); Google Play (notifiche in tempo reale con Pub/Sub) insieme al punto 1.
 6. **Condizioni d'uso proprie:** oggi su iPad il link porta al contratto standard di Apple; su Android c'è solo la privacy.
 7. **Oggetti già presenti dopo una scadenza:** stanze e simboli esistenti restano modificabili; sono bloccati solo gli strumenti per crearne di nuovi.
 8. Nelle schede degli store: dichiarare gli acquisti in-app (Play: «acquisti digitali: Sì» nel questionario dei contenuti; Apple: acquisti allegati alla versione 1.0 al primo invio).
