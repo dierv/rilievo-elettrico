@@ -16,6 +16,15 @@ test('regole Firestore e Storage: isolamento account, revisioni e immutabilità'
     firestore: { rules: fs.readFileSync(path.join(__dirname, '../firebase/firestore.rules'), 'utf8') },
     storage: { rules: fs.readFileSync(path.join(__dirname, '../firebase/storage.rules'), 'utf8') }
   });
+  // Piani (16/11/2026): alice ha un abbonamento (spazio.limite dal server); carla no; dario ha Studio a vita (regali/<email>);
+  // erica ha il Pro ma l'archivio pieno.
+  await environment.withSecurityRulesDisabled(async ctx => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'spazio/alice'), { usati: 0, limite: 25 * 1024 ** 3 });
+    await setDoc(doc(db, 'spazio/carla'), { usati: 0, limite: 0 });
+    await setDoc(doc(db, 'spazio/erica'), { usati: 25 * 1024 ** 3 - 4, limite: 25 * 1024 ** 3 });
+    await setDoc(doc(db, 'regali/dario@prova.it'), { piano: 'studio10' });
+  });
   const alice = environment.authenticatedContext('alice');
   const bob = environment.authenticatedContext('bob');
   const guest = environment.unauthenticatedContext();
@@ -89,6 +98,31 @@ test('regole Firestore e Storage: isolamento account, revisioni e immutabilità'
       await assertSucceeds(getBytes(ref(alice.storage(), jsonPath)));
       await assertFails(getBytes(ref(bob.storage(), jsonPath)));
       await assertFails(uploadBytes(ref(alice.storage(), jsonPath), bytes, { ...metadata, contentType: 'application/json' }));
+    });
+    await t.test('piani: senza abbonamento non si scrive, Studio a vita con l’email, archivio pieno blocca solo i file', async () => {
+      const carla = environment.authenticatedContext('carla', { email: 'carla@prova.it', email_verified: true });
+      const dario = environment.authenticatedContext('dario', { email: 'Dario@Prova.it', email_verified: true });
+      const finto = environment.authenticatedContext('fabio', { email: 'dario@prova.it', email_verified: false });
+      const erica = environment.authenticatedContext('erica');
+      const nuovo = (u, sid) => head({ snapshotPath: 'users/' + u + '/surveys/' + sid + '/snapshots/' + hash + '.json' });
+      await assertFails(setDoc(doc(carla.firestore(), 'users/carla/surveys/s1'), nuovo('carla', 's1')));
+      await assertFails(uploadBytes(ref(carla.storage(), 'users/carla/surveys/s1/files/' + hash), bytes, metadata));
+      await assertFails(uploadBytes(ref(carla.storage(), 'users/carla/surveys/s1/snapshots/' + hash + '.json'), bytes, { ...metadata, contentType: 'application/json' }));
+      await assertSucceeds(setDoc(doc(dario.firestore(), 'users/dario/surveys/s1'), nuovo('dario', 's1')));
+      await assertSucceeds(uploadBytes(ref(dario.storage(), 'users/dario/surveys/s1/files/' + hash), bytes, metadata));
+      await assertFails(setDoc(doc(finto.firestore(), 'users/fabio/surveys/s1'), nuovo('fabio', 's1')));
+      await assertFails(getDoc(doc(dario.firestore(), 'regali/dario@prova.it')));
+      await assertFails(setDoc(doc(carla.firestore(), 'regali/carla@prova.it'), { piano: 'studio10' }));
+      await assertFails(setDoc(doc(carla.firestore(), 'spazio/carla'), { usati: 0, limite: 1e12 }));
+      await assertFails(getDoc(doc(alice.firestore(), 'spazio/alice')));
+      await assertSucceeds(setDoc(doc(erica.firestore(), 'users/erica/surveys/s1'), nuovo('erica', 's1')));
+      await assertFails(uploadBytes(ref(erica.storage(), 'users/erica/surveys/s1/files/' + hash), bytes, metadata));
+      await assertSucceeds(uploadBytes(ref(erica.storage(), 'users/erica/surveys/s1/snapshots/' + hash + '.json'), bytes, { ...metadata, contentType: 'application/json' }));
+      // abbonamento finito: i dati restano leggibili
+      await environment.withSecurityRulesDisabled(ctx => setDoc(doc(ctx.firestore(), 'spazio/alice'), { usati: 0, limite: 0 }));
+      await assertSucceeds(getDoc(doc(alice.firestore(), headPath)));
+      await assertSucceeds(getBytes(ref(alice.storage(), filePath)));
+      await assertFails(setDoc(doc(alice.firestore(), headPath), head({ rev: 3 })));
     });
   } finally {
     await environment.cleanup();

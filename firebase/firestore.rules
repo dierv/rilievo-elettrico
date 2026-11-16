@@ -4,6 +4,17 @@ service cloud.firestore {
     function owner(uid) {
       return request.auth != null && request.auth.uid == uid;
     }
+    // Studio a vita: regali/<email in minuscolo> (versione web e persone fidate). Lo scrive solo l'amministratore.
+    function regalo() {
+      return request.auth != null && request.auth.token.email_verified == true && request.auth.token.email is string
+        && exists(/databases/$(database)/documents/regali/$(request.auth.token.email.lower()));
+    }
+    // Abbonamento attivo (Pro o Studio): spazio/<uid>.limite > 0, scritto dal server (verificaAcquisti, notifiche degli store).
+    // Senza piano i dati sul server restano leggibili ma non si scrivono più.
+    function piano(uid) {
+      return regalo() || (exists(/databases/$(database)/documents/spazio/$(uid))
+        && get(/databases/$(database)/documents/spazio/$(uid)).data.get('limite', 0) > 0);
+    }
     function identifier(value) {
       return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$') && !value.matches('^__.*__$');
     }
@@ -31,12 +42,12 @@ service cloud.firestore {
 
     match /users/{uid}/surveys/{sid} {
       allow read: if owner(uid);
-      allow create: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == 1;
-      allow update: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == resource.data.rev + 1;
+      allow create: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == 1 && piano(uid);
+      allow update: if owner(uid) && validHead(uid, sid) && request.resource.data.rev == resource.data.rev + 1 && piano(uid);
       // La cancellazione è una revisione del:true: i dispositivi offline devono
       // riceverla e le modifiche indipendenti devono ancora poter essere scelte.
       allow delete: if false;
     }
-    // Tutti gli altri percorsi, inclusi quelli di altri account, restano negati.
+    // Tutti gli altri percorsi (inclusi quelli di altri account, acquistiStore, spazio, regali) restano negati ai dispositivi.
   }
 }

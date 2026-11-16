@@ -22,6 +22,7 @@ const spazio = require('./spazio');
 
 initializeApp();
 const adesso = () => FieldValue.serverTimestamp();
+const emailDi = async uid => { try { const u = await getAuth().getUser(uid); return u.emailVerified ? u.email : null; } catch (e) { return null; } };
 const esiste = async uid => { try { await getAuth().getUser(uid); return true; } catch (e) { if (e && e.code === 'auth/user-not-found') return false; throw e; } };
 const regione = functions.region('europe-west1');
 
@@ -44,7 +45,8 @@ exports.verificaAcquisti = regione
   .https.onCall(async (data, context) => {
     const uid = context.auth && context.auth.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Entra nel tuo account SopraLux.');
-    return acquisti.verificaDaApp(getFirestore(), uid, data, { esiste, adesso, log: (m, x) => functions.logger.warn(m, x) });
+    const t = context.auth.token || {}, email = t.email_verified ? t.email : null; // per lo Studio a vita (regali/<email>)
+    return acquisti.verificaDaApp(getFirestore(), uid, data, { esiste, adesso, email, log: (m, x) => functions.logger.warn(m, x) });
   });
 
 exports.notificheApple = regione
@@ -52,7 +54,7 @@ exports.notificheApple = regione
   .https.onRequest(async (req, res) => {
     if (req.method !== 'POST') { res.status(405).send('Solo POST'); return; }
     try {
-      const tipo = await acquisti.notificaApple(getFirestore(), req.body, { adesso });
+      const tipo = await acquisti.notificaApple(getFirestore(), req.body, { adesso, emailDi });
       functions.logger.info('Notifica Apple', { tipo });
       res.status(200).send('ok');
     } catch (e) {

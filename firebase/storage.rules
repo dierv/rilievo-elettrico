@@ -13,6 +13,22 @@ service firebase.storage {
     function digest(value) {
       return value is string && value.matches('^[a-f0-9]{64}$');
     }
+    // Studio a vita (regali/<email>) e abbonamento attivo (spazio/<uid>.limite > 0): come in firestore.rules.
+    function regalo() {
+      return request.auth.token.email_verified == true && request.auth.token.email is string
+        && firestore.exists(/databases/(default)/documents/regali/$(request.auth.token.email.lower()));
+    }
+    function piano(uid) {
+      return regalo() || (firestore.exists(/databases/(default)/documents/spazio/$(uid))
+        && firestore.get(/databases/(default)/documents/spazio/$(uid)).data.get('limite', 0) > 0);
+    }
+    // File (foto, tavole, audio): anche spazio libero. Il conteggio (usati) lo aggiorna il server dopo ogni caricamento.
+    function spazioLibero(uid) {
+      return regalo() || (firestore.exists(/databases/(default)/documents/spazio/$(uid))
+        && firestore.get(/databases/(default)/documents/spazio/$(uid)).data.get('limite', 0) > 0
+        && firestore.get(/databases/(default)/documents/spazio/$(uid)).data.get('usati', 0) + request.resource.size
+          <= firestore.get(/databases/(default)/documents/spazio/$(uid)).data.get('limite', 0));
+    }
 
     match /users/{uid}/surveys/{sid}/files/{hash} {
       allow read: if owner(uid) && surveyId(sid) && digest(hash);
@@ -22,7 +38,8 @@ service firebase.storage {
         && request.resource.contentType is string
         && request.resource.contentType.size() <= 128
         && request.resource.metadata.sha256 == hash
-        && request.resource.metadata.schema == '1';
+        && request.resource.metadata.schema == '1'
+        && spazioLibero(uid);
       // Le nuove foto e registrazioni hanno un hash diverso. Non si sovrascrive
       // mai un file usato dalla revisione dell'altro dispositivo.
       allow update, delete: if false;
@@ -36,7 +53,8 @@ service firebase.storage {
         && request.resource.contentType == 'application/json'
         && digest(request.resource.metadata.sha256)
         && filename == request.resource.metadata.sha256 + '.json'
-        && request.resource.metadata.schema == '1';
+        && request.resource.metadata.schema == '1'
+        && piano(uid);
       allow update, delete: if false;
     }
   }

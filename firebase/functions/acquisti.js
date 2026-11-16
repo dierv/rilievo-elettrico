@@ -119,6 +119,16 @@ async function licenza(db, uid, ora = Date.now()) {
   return out;
 }
 
+// Studio a vita (versione web e persone fidate): regali/<email in minuscolo>, scritto solo dall'amministratore
+// (prove/regalo.js). Vale anche nell'app degli store e per le regole di Firestore e Storage.
+const REGALO = 'sopralux_studio10_anno';
+async function conRegalo(db, prodotti, email) {
+  if (typeof email !== 'string' || !email) return prodotti;
+  const s = await db.collection('regali').doc(email.toLowerCase()).get();
+  if (s.exists) prodotti[REGALO] = { scade: null, store: 'regalo', prova: false };
+  return prodotti;
+}
+
 // Account eliminato: i suoi acquisti restano senza account (si possono registrare di nuovo da chi ha lo stesso account dello store)
 async function staccaAccount(db, uid, adesso) {
   const q = await db.collection('acquistiStore').where('uid', '==', uid).get(); let n = 0;
@@ -128,7 +138,7 @@ async function staccaAccount(db, uid, adesso) {
 
 // Chiamata dall'app: { apple: [JWS delle transazioni attive su questo iPad] }
 async function verificaDaApp(db, uid, data, opz) {
-  const { esiste, adesso, radice, log } = opz;
+  const { esiste, adesso, radice, log, email } = opz;
   const jws = Array.isArray(data && data.apple) ? data.apple.filter(x => typeof x === 'string').slice(0, 60) : [];
   let registrati = 0, altroAccount = 0, scartati = 0;
   for (const j of jws) {
@@ -141,7 +151,7 @@ async function verificaDaApp(db, uid, data, opz) {
       scartati++; if (log) log('transazione Apple scartata', { uid, motivo: e.message });
     }
   }
-  const prodotti = await licenza(db, uid);
+  const prodotti = await conRegalo(db, await licenza(db, uid), email);
   await spazio.scriviLimite(db, uid, prodotti, adesso); // il limite dello spazio sul server segue il piano
   const sp = await spazio.leggi(db, uid);
   return { prodotti, registrati, altroAccount, scartati, spazio: { usati: sp.usati, limite: sp.limite } };
@@ -149,15 +159,15 @@ async function verificaDaApp(db, uid, data, opz) {
 
 // Notifica di Apple (corpo { signedPayload }). Risultato: tipo della notifica.
 async function notificaApple(db, corpo, opz) {
-  const { adesso, radice } = opz;
+  const { adesso, radice, emailDi } = opz;
   const n = verificaJws(corpo && corpo.signedPayload, radice);
   const d = n.data || {};
   if (d.bundleId !== BUNDLE) throw new Rifiutato('notifica di un\'altra app');
   if (d.signedTransactionInfo) {
     const uid = await aggiorna(db, transazioneApple(verificaJws(d.signedTransactionInfo, radice)), adesso);
-    if (uid) await spazio.scriviLimite(db, uid, await licenza(db, uid), adesso); // rinnovo, scadenza, rimborso: cambia il limite
+    if (uid) await spazio.scriviLimite(db, uid, await conRegalo(db, await licenza(db, uid), emailDi ? await emailDi(uid) : null), adesso); // rinnovo, scadenza, rimborso: cambia il limite
   }
   return n.notificationType || '?';
 }
 
-module.exports = { BUNDLE, PRODOTTI, APPLE_ROOT_G3, Rifiutato, verificaJws, transazioneApple, gettoneAccount, registra, aggiorna, licenza, staccaAccount, verificaDaApp, notificaApple, oidDer };
+module.exports = { BUNDLE, PRODOTTI, REGALO, conRegalo, APPLE_ROOT_G3, Rifiutato, verificaJws, transazioneApple, gettoneAccount, registra, aggiorna, licenza, staccaAccount, verificaDaApp, notificaApple, oidDer };

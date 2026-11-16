@@ -201,4 +201,18 @@ test('spazio: la risposta all\'app e le notifiche aggiornano il limite', async (
   assert.equal((await SP.leggi(db, 'anna')).limite, 0, 'rimborso: niente più spazio sul server');
 });
 
+test('Studio a vita: regali/<email> vale nell\'app e resta dopo le notifiche', async () => {
+  const db = memoria();
+  await db.collection('regali').doc('anna@prova.it').set({ piano: 'studio10' });
+  const r = await A.verificaDaApp(db, 'anna', {}, Object.assign(opz(), { email: 'Anna@Prova.it' }));
+  assert.deepEqual(r.prodotti[A.REGALO], { scade: null, store: 'regalo', prova: false });
+  assert.equal(r.spazio.limite, 300 * SP.GB);
+  assert.deepEqual((await A.verificaDaApp(db, 'bruno', {}, Object.assign(opz(), { email: 'bruno@prova.it' }))).prodotti, {});
+  // una notifica su un altro acquisto di anna non toglie il regalo
+  const t = tx({ originalTransactionId: '900', transactionId: '900' });
+  await A.verificaDaApp(db, 'anna', { apple: [firma(C, t)] }, Object.assign(opz(), { email: 'anna@prova.it' }));
+  await A.notificaApple(db, { signedPayload: firma(C, { notificationType: 'REFUND', signedDate: ADESSO, data: { bundleId: A.BUNDLE, signedTransactionInfo: firma(C, Object.assign({}, t, { revocationDate: ADESSO, signedDate: ADESSO + 5 })) } }) }, Object.assign(opz(), { emailDi: async u => u + '@prova.it' }));
+  assert.equal((await SP.leggi(db, 'anna')).limite, 300 * SP.GB);
+});
+
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
