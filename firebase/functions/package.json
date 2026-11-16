@@ -4,7 +4,7 @@
   "description": "Funzioni server di SopraLux: pulizia dei dati di un account eliminato, verifica degli acquisti negli store e notifiche di Apple",
   "main": "index.js",
   "scripts": {
-    "test": "node --test prove/acquisti.test.js"
+    "test": "node --test --test-reporter=tap prove/acquisti.test.js"
   },
   "engines": { "node": "22" },
   "dependencies": {
