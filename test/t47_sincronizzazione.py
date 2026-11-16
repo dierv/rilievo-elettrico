@@ -105,13 +105,29 @@ def t_quota(br, sv, root, png):
     check(not e.errs, f'nessun errore in console: {e.errs[:3]}'); e.close()
 
 
+def t_web(br, sv, png):
+    print('5. Versione web: spazio usato e limite dal server; senza Studio a vita niente server')
+    G = 1024 ** 3
+    pwa = T.build('pwa')
+    w = Dev(br, sv, pwa, 'web', None, 'dierv', fn={'prodotti': {}, 'altroAccount': 0, 'spazio': {'usati': 379 * 1024 ** 2, 'limite': 300 * G}})
+    w.pg.wait_for_function("PwaCloud.space && !!PwaCloud.engine", timeout=8000)
+    check('Archivio sul server: 379 MB di 300,0 GB' in w.pg.inner_text('#pwaAccount'), f'web: la scheda dell\'account mostra lo spazio ({w.pg.inner_text("#pwaAccount")[-90:]})')
+    w.new_survey(png, 'Dal web'); w.js("Sync.flush && Sync.flush()"); w.js("goHome()"); w.pg.wait_for_timeout(500)
+    check(w.wait_synced() and w.heads() == 1, f'web con lo Studio a vita: sincronizza ({w.status()})')
+    check(not w.errs, f'web: nessun errore in console: {w.errs[:3]}'); w.close()
+    x = Dev(br, sv, pwa, 'web', None, 'ignoto', fn={'prodotti': {}, 'altroAccount': 0, 'spazio': {'usati': 0, 'limite': 0}})
+    x.pg.wait_for_function("PwaCloud.space && !PwaCloud.engine", timeout=8000)
+    check('non è attivo per questo account' in x.status() and 'Archivio sul server:' not in x.pg.inner_text('#pwaAccount'), f'web senza Studio a vita: lo stato lo dice, nessuna sincronizzazione ({x.status()})')
+    check(not x.errs, f'web: nessun errore in console: {x.errs[:3]}'); x.close()
+
+
 def main():
     if not os.path.exists(os.path.join(T.REPO, 'app', 'node_modules', '@capacitor', 'core')): sys.exit('Prima eseguire npm ci nella cartella app')
     root = T.build('app', 'store'); png = T.plan_png(); sv = T.Server()
     with sync_playwright() as p:
         br = p.chromium.launch(executable_path=T.CHROME, headless=True, args=['--no-sandbox']) if T.CHROME else p.chromium.launch(headless=True)
         only = sys.argv[1:]
-        for k, fn in [('1', lambda: t_pro_two_devices(br, sv, root, png)), ('2', lambda: t_base(br, sv, root, png)), ('3', lambda: t_guest(br, sv, root, png)), ('4', lambda: t_quota(br, sv, root, png))]:
+        for k, fn in [('1', lambda: t_pro_two_devices(br, sv, root, png)), ('2', lambda: t_base(br, sv, root, png)), ('3', lambda: t_guest(br, sv, root, png)), ('4', lambda: t_quota(br, sv, root, png)), ('5', lambda: t_web(br, sv, png))]:
             if only and k not in only: continue
             try: fn()
             except Exception as e:

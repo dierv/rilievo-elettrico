@@ -408,13 +408,15 @@ const PwaCloud = {
   },
   // App degli store (Lic.on): l'archivio sul server c'è solo con il Pro (o Studio). Senza, i dati restano
   // nell'archivio locale dell'account e nella cartella del dispositivo. Nella PWA e in Claude vale sempre.
-  allowed() { return typeof Lic === 'undefined' || !Lic.on || Lic.can('sync'); },
+  // Versione web: vale finché il server non dice che l'account non ha spazio (limite 0: non è nello Studio a vita).
+  allowed() { return typeof Lic === 'undefined' || !Lic.on ? !this.space || this.space.limite > 0 : Lic.can('sync'); },
   async start() {
     if (this.started || !this.prepared) return;
     this.started = true;
     await this.captureAll();
     if ((FirebaseAccount.user?.uid || null) !== this.uid) { this.accountChanged(); return; }
     if (!this.uid) { this.refresh(); return; }
+    this.loadSpace(true);
     await this.startRemote();
   },
   async startRemote() { // collegamento al server: all'avvio, o quando arriva il Pro
@@ -435,17 +437,39 @@ const PwaCloud = {
         this.listening = true;
         window.addEventListener('online', () => this.syncNow());
         window.addEventListener('offline', () => this.refresh());
-        document.addEventListener('visibilitychange', () => { if (!document.hidden && this.current()) this.syncNow(); });
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && this.current()) { this.syncNow(); this.loadSpace(); } });
       }
     } finally { this.remoteStarting = false; this.refresh(); }
   },
   // Spazio sul server (app degli store): limite del piano (Lic.memGb) e byte già usati secondo il server
   // (risposta di verificaAcquisti), più quelli caricati da qui dopo quella risposta. null = nessun limite.
-  upBytes: 0,
+  upBytes: 0, space: null, spaceAt: 0,
   quota() {
-    if (typeof Lic === 'undefined' || !Lic.on) return null;
+    if (typeof Lic === 'undefined' || !Lic.on) { // versione web: spazio e limite letti dal server (loadSpace)
+      const sp = this.space; return sp && sp.limite ? { usati: sp.usati + this.upBytes, limite: sp.limite } : null;
+    }
     const limite = Lic.memGb() * 1024 ** 3; if (!limite) return null;
     return { usati: ((Lic.acc && Lic.acc.spazio && Lic.acc.spazio.usati) || 0) + this.upBytes, limite };
+  },
+  // Versione web: chiede al server lo spazio usato e il limite dell'account (funzione verificaAcquisti, senza acquisti).
+  // Nell'app degli store lo fa già Lic.syncAccount. Al massimo ogni 10 minuti, salvo force.
+  async loadSpace(force = false) {
+    if ((typeof Lic !== 'undefined' && Lic.on) || !this.uid || !this.current() || !navigator.onLine || typeof LIC_FN === 'undefined') return;
+    if (this.spaceBusy || (!force && Date.now() - this.spaceAt < 10 * 60000)) return;
+    const user = FirebaseAccount.auth && FirebaseAccount.auth.currentUser; if (!user || user.uid !== this.uid) return;
+    this.spaceBusy = true;
+    try {
+      const r = await fetch(LIC_FN, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() }, body: JSON.stringify({ data: {} }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j || !j.result) throw new Error((j && j.error && j.error.message) || 'risposta ' + r.status);
+      const sp = j.result.spazio || {};
+      if (this.current()) {
+        this.space = { usati: Number(sp.usati) || 0, limite: Number(sp.limite) || 0 }; this.spaceAt = Date.now(); this.upBytes = 0;
+        if (!this.allowed()) this.stopRemote(); else if (!this.engine) this.startRemote().catch(error => { this.error = this.message(error); this.refresh(); });
+        this.refresh();
+      }
+    } catch (e) { console.warn('spazio sul server: lettura non riuscita', e); }
+    finally { this.spaceBusy = false; }
   },
   fmtBytes(b) { return b < 1024 ** 3 ? Math.round(b / 1024 ** 2) + ' MB' : (b / 1024 ** 3).toFixed(1).replace('.', ',') + ' GB'; },
   async readForUpload(file) { // un file da mandare al server: oltre il limite resta sul dispositivo (il sopralluogo aspetta)
@@ -530,7 +554,7 @@ Object.assign(PwaCloud, {
     if (this.switching) return { text: this.localError || 'Salvo i dati prima del cambio account…', style: this.localError ? 'bad' : 'grey' };
     if (this.localError || Sync.err) return { text: this.localError || Sync.err, style: 'bad' };
     if (!this.uid) return { text: typeof Lic !== 'undefined' && Lic.on ? 'Salvato su questo dispositivo.' : 'Salvato su questo dispositivo. Accedi per ritrovare gli impianti sugli altri dispositivi.', style: 'grey' };
-    if (!this.allowed()) return { text: 'Salvato su questo dispositivo. L’archivio sul server e gli altri dispositivi sono compresi nel Pro.', style: 'grey' };
+    if (!this.allowed()) return { text: typeof Lic !== 'undefined' && Lic.on ? 'Salvato su questo dispositivo. L’archivio sul server e gli altri dispositivi sono compresi nel Pro.' : 'Salvato su questo dispositivo. L’archivio sul server non è attivo per questo account.', style: 'grey' };
     if (state.conflicts) return { text: `${state.conflicts} impianti da decidere`, style: 'warn' };
     if (!navigator.onLine) return { text: `Offline: modifiche in coda (${pending})`, style: 'warn' };
     if (this.error || state.error) return { text: this.error || this.message(state.error), style: 'bad' };
@@ -546,7 +570,7 @@ Object.assign(PwaCloud, {
     return `<div class="row wrap" style="gap:10px"><b style="flex:1;min-width:160px;overflow-wrap:anywhere">${esc(label)}</b><div class="row wrap authbs">${button}</div></div>
       <div class="small" role="status" style="margin-top:8px"><span class="chip ${status.style}">${esc(status.text)}</span></div>
       ${signed && this.allowed() && this.quota() ? `<div class="small mut" id="fbSpace" style="margin-top:6px">Archivio sul server: ${esc(this.fmtBytes(this.quota().usati))} di ${esc(this.fmtBytes(this.quota().limite))}</div>` : ''}
-      ${signed && !this.allowed() && !this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbPro">Piani e sblocchi</button></div>` : signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
+      ${signed && !this.allowed() && !this.localError ? (typeof Lic !== 'undefined' && Lic.on ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbPro">Piani e sblocchi</button></div>` : '') : signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
       ${this.migrationNotice ? `<div class="small mut" style="margin-top:6px">${esc(this.migrationNotice)}</div>` : ''}
       ${account.error ? `<div class="small" style="color:var(--bad);margin-top:6px">${esc(account.error)}</div>` : ''}`;
   },
