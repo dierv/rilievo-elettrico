@@ -423,7 +423,7 @@ const PwaCloud = {
     try {
       let deviceId = KV.get('cloudDeviceId');
       if (!deviceId) { deviceId = uid('device_'); this.setting('cloudDeviceId', deviceId); }
-      const backend = CloudBackend.open({ app: FirebaseAccount.app, uid: this.uid, deviceId, isCurrent: () => this.current(), readLocalBlob: file => this.readLocalBlob(file) });
+      const backend = CloudBackend.open({ app: FirebaseAccount.app, uid: this.uid, deviceId, isCurrent: () => this.current(), readLocalBlob: file => this.readForUpload(file) });
       this.remote = { ...backend, watchHeads: (next, onError) => backend.watchHeads((heads, metadata) => {
           if (!metadata?.fromCache) this.serverSeen = true;
           next(heads, metadata); this.refresh();
@@ -439,6 +439,25 @@ const PwaCloud = {
       }
     } finally { this.remoteStarting = false; this.refresh(); }
   },
+  // Spazio sul server (app degli store): limite del piano (Lic.memGb) e byte già usati secondo il server
+  // (risposta di verificaAcquisti), più quelli caricati da qui dopo quella risposta. null = nessun limite.
+  upBytes: 0,
+  quota() {
+    if (typeof Lic === 'undefined' || !Lic.on) return null;
+    const limite = Lic.memGb() * 1024 ** 3; if (!limite) return null;
+    return { usati: ((Lic.acc && Lic.acc.spazio && Lic.acc.spazio.usati) || 0) + this.upBytes, limite };
+  },
+  fmtBytes(b) { return b < 1024 ** 3 ? Math.round(b / 1024 ** 2) + ' MB' : (b / 1024 ** 3).toFixed(1).replace('.', ',') + ' GB'; },
+  async readForUpload(file) { // un file da mandare al server: oltre il limite resta sul dispositivo (il sopralluogo aspetta)
+    const q = this.quota();
+    if (q && q.usati + (Number(file.size) || 0) > q.limite) {
+      const e = new Error(`Archivio sul server pieno (${this.fmtBytes(q.usati)} di ${this.fmtBytes(q.limite)}): le nuove foto restano su questo dispositivo. Con più memoria ripartono da sole.`);
+      e.code = 'sync/quota'; throw e;
+    }
+    const blob = await this.readLocalBlob(file);
+    if (blob) this.upBytes += Number(file.size) || 0;
+    return blob;
+  },
   stopRemote() { // il Pro è finito: niente più scambi con il server, i dati restano sul dispositivo
     if (!this.engine && !this.remote) return;
     this.engine?.stop(); this.remote?.close();
@@ -447,8 +466,9 @@ const PwaCloud = {
   },
   licChanged() { // chiamata da Lic quando cambiano piani e sblocchi
     if (!this.prepared || !this.started || this.switching) return;
-    if (this.allowed()) this.startRemote().catch(error => { this.error = this.message(error); this.refresh(); });
-    else this.stopRemote();
+    if (!this.allowed()) { this.stopRemote(); return; }
+    if (this.engine) { this.error = ''; this.engine.sync().catch(() => { }); this.refresh(); return; } // per esempio più memoria: riparte quello che aspettava
+    this.startRemote().catch(error => { this.error = this.message(error); this.refresh(); });
   },
   async syncNow() {
     if (this.switching && !this.localError) return;
@@ -525,6 +545,7 @@ Object.assign(PwaCloud, {
     const button = account.buttonsHtml(!!disabled);
     return `<div class="row wrap" style="gap:10px"><b style="flex:1;min-width:160px;overflow-wrap:anywhere">${esc(label)}</b><div class="row wrap authbs">${button}</div></div>
       <div class="small" role="status" style="margin-top:8px"><span class="chip ${status.style}">${esc(status.text)}</span></div>
+      ${signed && this.allowed() && this.quota() ? `<div class="small mut" id="fbSpace" style="margin-top:6px">Archivio sul server: ${esc(this.fmtBytes(this.quota().usati))} di ${esc(this.fmtBytes(this.quota().limite))}</div>` : ''}
       ${signed && !this.allowed() && !this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbPro">Piani e sblocchi</button></div>` : signed || this.localError ? `<div class="row wrap" style="gap:8px;margin-top:9px"><button class="sm" id="fbSyncNow"${this.switching && !this.localError ? ' disabled' : ''}>${this.localError ? 'Riprova salvataggio' : 'Sincronizza ora'}</button>${this.statusValue.conflicts ? `<button class="sm pri" id="fbConflicts">Da decidere (${this.statusValue.conflicts})</button>` : ''}</div>` : ''}
       ${this.migrationNotice ? `<div class="small mut" style="margin-top:6px">${esc(this.migrationNotice)}</div>` : ''}
       ${account.error ? `<div class="small" style="color:var(--bad);margin-top:6px">${esc(account.error)}</div>` : ''}`;

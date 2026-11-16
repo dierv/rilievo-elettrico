@@ -17,7 +17,7 @@ check = T.check
 
 class Dev(T.App):
     """Un dispositivo: app nativa con account aperto (user) e il server indicato."""
-    def __init__(self, browser, server, root, platform, store, user, srv=None):
+    def __init__(self, browser, server, root, platform, store, user, srv=None, fn=None):
         self.ctx = browser.new_context(viewport={'width': 1180, 'height': 820})
         self.pg = self.ctx.new_page(); self.errs = []
         self.pg.on('pageerror', lambda e: self.errs.append('errore pagina: ' + str(e)))
@@ -25,7 +25,7 @@ class Dev(T.App):
         self.pg.add_init_script('window.__CAP = ' + json.dumps({'platform': platform, 'store': store, 'auth': True}) + '; window.__FB = ' + json.dumps({'user': user, 'server': srv}) + ';')
         self.pg.route('**/lib/capacitor.js', lambda r: r.fulfill(body=T.MOCK, content_type='application/javascript'))
         self.pg.route('**/lib/firebase.js', lambda r: r.fulfill(body=FAKE_FB, content_type='application/javascript'))
-        self.pg.route(T.FN, lambda r: r.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization'}, content_type='application/json', body=json.dumps({'result': {'prodotti': {}, 'altroAccount': 0}})))
+        self.pg.route(T.FN, lambda r: r.fulfill(status=200, headers={'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type, authorization'}, content_type='application/json', body=json.dumps({'result': fn or {'prodotti': {}, 'altroAccount': 0}})))
         self.pg.goto(server.url(root)); self.pg.wait_for_function("document.querySelector('#hList') && !/Avvio/.test(document.querySelector('#hList').textContent)", timeout=20000)
         self.pg.wait_for_timeout(600)
 
@@ -90,13 +90,28 @@ def t_guest(br, sv, root, png):
     check(not d.errs, f'nessun errore in console: {d.errs[:3]}'); d.close()
 
 
+def t_quota(br, sv, root, png):
+    print('4. Spazio sul server: oltre il limite le nuove foto restano sul dispositivo, con più memoria ripartono')
+    G = 1024 ** 3
+    e = Dev(br, sv, root, 'android', {'products': T.products('android'), 'owned': T.owned('android', 'pro_mese')}, 'carla', fn={'prodotti': {}, 'altroAccount': 0, 'spazio': {'usati': 25 * G - 1000, 'limite': 25 * G}})
+    e.pg.wait_for_function("!!PwaCloud.engine && Lic.acc && Lic.acc.spazio && Lic.acc.spazio.usati > 0", timeout=8000)
+    check('Archivio sul server: 25,0 GB di 25,0 GB' in e.pg.inner_text('#pwaAccount'), f'la scheda dell\'account mostra lo spazio usato ({e.pg.inner_text("#pwaAccount")[-80:]})')
+    e.new_survey(png, 'Archivio pieno'); e.js("Sync.flush && Sync.flush()"); e.js("goHome()"); e.pg.wait_for_timeout(1500)
+    check(e.heads() == 0 and e.js("window.__srv.uploads") == 0, f'archivio pieno: la tavola non va sul server ({e.js("window.__srv.uploads")} file)')
+    check('Archivio sul server pieno' in e.status() and 'Archivio pieno' in e.pg.inner_text('#hList'), f'lo stato lo dice e il sopralluogo resta sul dispositivo ({e.status()})')
+    e.js("window.__store.owned.push(window.__tx('sopralux_mem50', 'subs')); window.__listeners.transactionUpdated.forEach(f => f({}))")
+    e.pg.wait_for_function("Lic.memGb() === 75", timeout=5000)
+    check(e.wait_synced() and e.heads() == 1, f'con +50 GB l\'invio riparte da solo ({e.heads()} sopralluoghi, {e.status()})')
+    check(not e.errs, f'nessun errore in console: {e.errs[:3]}'); e.close()
+
+
 def main():
     if not os.path.exists(os.path.join(T.REPO, 'app', 'node_modules', '@capacitor', 'core')): sys.exit('Prima eseguire npm ci nella cartella app')
     root = T.build('app', 'store'); png = T.plan_png(); sv = T.Server()
     with sync_playwright() as p:
         br = p.chromium.launch(executable_path=T.CHROME, headless=True, args=['--no-sandbox']) if T.CHROME else p.chromium.launch(headless=True)
         only = sys.argv[1:]
-        for k, fn in [('1', lambda: t_pro_two_devices(br, sv, root, png)), ('2', lambda: t_base(br, sv, root, png)), ('3', lambda: t_guest(br, sv, root, png))]:
+        for k, fn in [('1', lambda: t_pro_two_devices(br, sv, root, png)), ('2', lambda: t_base(br, sv, root, png)), ('3', lambda: t_guest(br, sv, root, png)), ('4', lambda: t_quota(br, sv, root, png))]:
             if only and k not in only: continue
             try: fn()
             except Exception as e:

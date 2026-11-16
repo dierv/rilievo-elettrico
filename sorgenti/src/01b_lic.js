@@ -154,7 +154,9 @@ const Lic = {
       const cur = licUser(); if (!cur || cur.uid !== u.uid) return; // nel frattempo è cambiato account
       const before = this.accIds().sort().join();
       const prodotti = {}; for (const [p, v] of Object.entries(j.result.prodotti || {})) if (LIC_SKUS[p] && v) prodotti[p] = { scade: Number(v.scade) || null, store: v.store || '', prova: !!v.prova };
-      this.acc = { uid: u.uid, prodotti, altro: Number(j.result.altroAccount) || 0, t: Date.now() }; UIP.set('licAcc', this.acc);
+      const sp = j.result.spazio || {};
+      this.acc = { uid: u.uid, prodotti, altro: Number(j.result.altroAccount) || 0, spazio: { usati: Number(sp.usati) || 0, limite: Number(sp.limite) || 0 }, t: Date.now() }; UIP.set('licAcc', this.acc);
+      if (typeof PwaCloud !== 'undefined') { PwaCloud.upBytes = 0; PwaCloud.refresh && PwaCloud.refresh(); } // spazio usato: vale il conteggio del server
       this.accKey = key; this.accAt = Date.now();
       if (this.accIds().sort().join() !== before) this.changed(); else this.render();
     } catch (e) { console.warn('acquisti dell\'account: verifica non riuscita', e); }

@@ -10,6 +10,7 @@
 // verificaAcquisti: l'app manda le transazioni firmate dallo store; il server le controlla, le lega
 // all'account e risponde con i prodotti attivi dell'account (acquisti.js).
 // notificheApple: App Store Server Notifications V2 (rinnovi, scadenze, rimborsi), indirizzo impostato in App Store Connect.
+// contaSpazio: somma lo spazio occupato da ogni account in Storage (spazio.js); il limite lo scrive verificaAcquisti.
 // Pubblicazione: firebase deploy --only functions   (dalla cartella principale del repo)
 const functions = require('firebase-functions/v1');
 const { initializeApp } = require('firebase-admin/app');
@@ -17,6 +18,7 @@ const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
 const acquisti = require('./acquisti');
+const spazio = require('./spazio');
 
 initializeApp();
 const adesso = () => FieldValue.serverTimestamp();
@@ -32,6 +34,7 @@ exports.eliminaDatiAccount = regione
     const db = getFirestore();
     await db.recursiveDelete(db.doc('users/' + uid));
     await getStorage().bucket().deleteFiles({ prefix: 'users/' + uid + '/' });
+    await db.recursiveDelete(db.doc('spazio/' + uid));
     const n = await acquisti.staccaAccount(db, uid, adesso);
     functions.logger.info('Dati dell’account eliminati', { uid, acquisti: n });
   });
@@ -57,4 +60,12 @@ exports.notificheApple = regione
       functions.logger.warn('Notifica Apple scartata', { motivo: e.message });
       res.status(400).send('non valida');
     }
+  });
+
+exports.contaSpazio = regione
+  .runWith({ timeoutSeconds: 60, memory: '256MB' })
+  .storage.bucket('sopralux-64b29.firebasestorage.app').object()
+  .onFinalize(async obj => {
+    if (!spazio.uidDi(obj && obj.name)) return;
+    await spazio.contaFile(getFirestore(), obj.name, Number(obj.size) || 0, adesso);
   });

@@ -14,6 +14,7 @@
 // Un acquisto appartiene a un solo account: al primo che lo registra. Passa a un altro account solo se è
 // stato comprato da quell'account (gettone dell'account, appAccountToken) o se il primo account non esiste più.
 const crypto = require('crypto');
+const spazio = require('./spazio');
 
 const BUNDLE = 'it.diervsoft.sopralux';
 const PRE = 'sopralux_';
@@ -95,13 +96,14 @@ async function registra(db, uid, r, esiste, adesso) {
 }
 
 // Aggiornamento da una notifica dello store: cambia i dati dell'acquisto, non l'account a cui appartiene.
+// Risultato: l'account a cui appartiene l'acquisto (o null).
 async function aggiorna(db, r, adesso) {
   const ref = db.collection('acquistiStore').doc(chiave(r));
   return db.runTransaction(async tx => {
-    const s = await tx.get(ref), cur = s.exists ? s.data() : null;
-    if (cur && cur.firmato && r.firmato < cur.firmato) return false;
-    tx.set(ref, Object.assign({}, r, { uid: cur && cur.uid ? cur.uid : null, aggiornato: adesso() }), { merge: true });
-    return true;
+    const s = await tx.get(ref), cur = s.exists ? s.data() : null, uid = cur && cur.uid ? cur.uid : null;
+    if (cur && cur.firmato && r.firmato < cur.firmato) return uid;
+    tx.set(ref, Object.assign({}, r, { uid, aggiornato: adesso() }), { merge: true });
+    return uid;
   });
 }
 
@@ -139,7 +141,10 @@ async function verificaDaApp(db, uid, data, opz) {
       scartati++; if (log) log('transazione Apple scartata', { uid, motivo: e.message });
     }
   }
-  return { prodotti: await licenza(db, uid), registrati, altroAccount, scartati };
+  const prodotti = await licenza(db, uid);
+  await spazio.scriviLimite(db, uid, prodotti, adesso); // il limite dello spazio sul server segue il piano
+  const sp = await spazio.leggi(db, uid);
+  return { prodotti, registrati, altroAccount, scartati, spazio: { usati: sp.usati, limite: sp.limite } };
 }
 
 // Notifica di Apple (corpo { signedPayload }). Risultato: tipo della notifica.
@@ -148,7 +153,10 @@ async function notificaApple(db, corpo, opz) {
   const n = verificaJws(corpo && corpo.signedPayload, radice);
   const d = n.data || {};
   if (d.bundleId !== BUNDLE) throw new Rifiutato('notifica di un\'altra app');
-  if (d.signedTransactionInfo) await aggiorna(db, transazioneApple(verificaJws(d.signedTransactionInfo, radice)), adesso);
+  if (d.signedTransactionInfo) {
+    const uid = await aggiorna(db, transazioneApple(verificaJws(d.signedTransactionInfo, radice)), adesso);
+    if (uid) await spazio.scriviLimite(db, uid, await licenza(db, uid), adesso); // rinnovo, scadenza, rimborso: cambia il limite
+  }
   return n.notificationType || '?';
 }
 

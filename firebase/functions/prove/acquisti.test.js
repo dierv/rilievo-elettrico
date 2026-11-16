@@ -10,6 +10,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const A = require('../acquisti');
+const SP = require('../spazio');
 
 /* ---- catena di certificati di prova ---- */
 function catena(dir, nome, conOid = true) {
@@ -39,7 +40,7 @@ function firma(c, dati, alg = 'ES256') {
 /* ---- Firestore in memoria (solo quello che usa acquisti.js) ---- */
 function memoria() {
   const docs = new Map();
-  const ref = p => ({ path: p, async get() { return snap(p); }, async set(d, o) { scrivi(p, d, o); } });
+  const ref = p => ({ path: p, async get() { return snap(p); }, async set(d, o) { scrivi(p, d, o); }, collection: c => ({ doc: id => ref(p + '/' + c + '/' + id) }) });
   const snap = p => ({ exists: docs.has(p), data: () => (docs.has(p) ? JSON.parse(JSON.stringify(docs.get(p))) : undefined), ref: ref(p) });
   const scrivi = (p, d, o) => docs.set(p, Object.assign(o && o.merge && docs.has(p) ? docs.get(p) : {}, JSON.parse(JSON.stringify(d))));
   return {
@@ -168,6 +169,36 @@ test('account eliminato: gli acquisti restano senza account', async () => {
 
 test('OID in DER come nei certificati di Apple', () => {
   assert.equal(A.oidDer('1.2.840.113635.100.6.11.1').toString('hex'), '060a2a864886f76364060b01');
+});
+
+test('spazio: limite dal piano, memoria solo con un piano', () => {
+  const G = SP.GB;
+  assert.equal(SP.limiteDa({}), 0);
+  assert.equal(SP.limiteDa({ sopralux_dxf: {} }), 0);
+  assert.equal(SP.limiteDa({ sopralux_pro_mese: {} }), 25 * G);
+  assert.equal(SP.limiteDa({ sopralux_pro_anno: {}, sopralux_studio3_mese: {} }), 100 * G);
+  assert.equal(SP.limiteDa({ sopralux_studio10_anno: {}, sopralux_mem50: {}, sopralux_mem200: {} }), 550 * G);
+  assert.equal(SP.limiteDa({ sopralux_mem500: {} }), 0);
+});
+
+test('spazio: ogni file si conta una volta sola, solo nella cartella di un account', async () => {
+  const db = memoria();
+  assert.equal(await SP.contaFile(db, 'users/anna/surveys/s1/files/' + 'a'.repeat(64), 1000, () => 1), true);
+  assert.equal(await SP.contaFile(db, 'users/anna/surveys/s1/files/' + 'a'.repeat(64), 1000, () => 1), false, 'notifica ripetuta');
+  await SP.contaFile(db, 'users/anna/surveys/s1/snapshots/' + 'b'.repeat(64) + '.json', 300, () => 1);
+  assert.equal(await SP.contaFile(db, 'altro/file.bin', 5, () => 1), false);
+  assert.deepEqual(await SP.leggi(db, 'anna'), { usati: 1300, file: 2, limite: 0 });
+});
+
+test('spazio: la risposta all\'app e le notifiche aggiornano il limite', async () => {
+  const db = memoria();
+  const sub = tx({ productId: 'sopralux_pro_mese', originalTransactionId: '800', transactionId: '800', expiresDate: ADESSO + 864e5, type: 'Auto-Renewable Subscription' });
+  await SP.contaFile(db, 'users/anna/surveys/s1/files/' + 'c'.repeat(64), 5000, () => 1);
+  const r = await A.verificaDaApp(db, 'anna', { apple: [firma(C, sub)] }, opz());
+  assert.deepEqual(r.spazio, { usati: 5000, limite: 25 * SP.GB });
+  const notifica = t => ({ signedPayload: firma(C, { notificationType: 'REFUND', signedDate: ADESSO, data: { bundleId: A.BUNDLE, signedTransactionInfo: firma(C, t) } }) });
+  await A.notificaApple(db, notifica(Object.assign({}, sub, { revocationDate: ADESSO, signedDate: ADESSO + 1000 })), opz());
+  assert.equal((await SP.leggi(db, 'anna')).limite, 0, 'rimborso: niente più spazio sul server');
 });
 
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
