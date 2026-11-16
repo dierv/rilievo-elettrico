@@ -51,7 +51,8 @@ Così uno sblocco o un abbonamento comprato su un dispositivo vale anche sull'al
 - **Spazio usato** (`firebase/functions/spazio.js`): la funzione `contaSpazio` somma i byte di ogni file caricato in `users/<uid>/` (una volta sola per file) in `spazio/<uid>`; i file già presenti al 16/11 sono stati contati con `prove/ricalcola_spazio.js`.
 - **Limite:** 25 GB Pro, 100 GB Studio 3, 300 GB Studio 10, più i pacchetti di memoria (solo insieme a un piano). Lo scrive `verificaAcquisti` in `spazio/<uid>.limite` (e le notifiche di Apple quando cambia l'abbonamento) e lo restituisce all'app con lo spazio usato.
 - **Nell'app:** la scheda dell'account mostra «Archivio sul server: X di Y». Oltre il limite i file nuovi non partono (il sopralluogo con le foto nuove resta in coda sul dispositivo, gli altri si sincronizzano) e lo stato lo dice; con più memoria l'invio riparte da solo.
-- **Controllo sul server** (passo successivo): regole di Firestore e Storage che fanno scrivere solo chi ha un piano attivo e spazio libero.
+- **Controllo sul server** (regole pubblicate il 16/11): sopralluoghi e copie si scrivono solo con un piano attivo (`spazio/<uid>.limite > 0`, scritto dal server) o con lo Studio a vita; i file (foto, tavole, audio) anche solo con spazio libero. Senza piano i dati sul server restano leggibili. Le regole di Storage leggono Firestore (permesso concesso a Storage alla pubblicazione). Prova negli emulatori: `sh firebase/prova_regole.sh` in Cloud Shell; pubblicazione: `sh firebase/pubblica_regole.sh`.
+- **Studio a vita** (versione web e persone fidate): documento `regali/<email in minuscolo>`; vale per le regole, nell'app e per il limite (300 GB). Da Cloud Shell: `cd ~/rilievo-elettrico/firebase/functions && node prove/regalo.js aggiungi <email> [nota]` (oppure `togli`, `elenco`). Il server non distingue la versione web dall'app: un nuovo utente della versione web sincronizza solo dopo essere stato aggiunto (la versione web si sistemerà più avanti).
 - Prova: `test/t47_sincronizzazione.py` (Firebase finto, due dispositivi, Base, Pro comprato dopo e scaduto, archivio pieno).
 
 ## Prodotti da creare negli store
@@ -135,7 +136,7 @@ Fonti: [Android Developers – Test your Google Play Billing Library integration
 
 1. **Acquisti sull'account SopraLux:** fatto per Apple (16/11). Manca Google Play: verifica dei gettoni di acquisto con l'API di Google Play (account di servizio delle funzioni con accesso in Play Console), da fare dopo il trasferimento dell'app all'account della SRL.
 2. **Cambio di piano su Android:** il plugin non passa a Google Play la sostituzione di un abbonamento con un altro. Oggi l'app spiega di disdire e riabbonarsi alla scadenza. Va risolto prima di vendere più piani su Android.
-3. **Pro nell'app nativa:** sincronizzazione e conteggio dello spazio fatti (16/11). Manca il controllo sul server (regole) e i pacchetti di memoria in vendita.
+3. **Pro nell'app nativa:** sincronizzazione, conteggio dello spazio e controllo sul server fatti (16/11). Mancano i pacchetti di memoria in vendita.
 4. **Studio:** sopralluoghi condivisi.
 5. **Notifiche degli store al server** (rinnovi, disdette, rimborsi): Apple fatto (16/11); Google Play (notifiche in tempo reale con Pub/Sub) insieme al punto 1.
 6. **Condizioni d'uso proprie:** oggi su iPad il link porta al contratto standard di Apple; su Android c'è solo la privacy.
