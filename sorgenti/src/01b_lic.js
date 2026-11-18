@@ -42,7 +42,7 @@ const LIC_FEAT = {
   stanze: ['Stanze', 'p'], simboli: ['Simboli e legenda', 'p'], controllo: ['Controllo e chiusura del sopralluogo', 'p'], computo: ['Computo ed esportazioni DXF, CSV e ZIP', 'p'], ai: ['Riconoscimento AI', 'p'], sync: ['Sincronizzazione su più dispositivi', 'p'],
 };
 const LIC_SOON = ['studio3', 'studio10', 'mem50', 'mem200', 'mem500']; // non ancora in vendita: nelle build per lo store non si comprano
-const LIC_SOON_TXT = { pro: 'Con l\'accesso al tuo account SopraLux i sopralluoghi si salvano anche sul server e li ritrovi sugli altri tuoi dispositivi.', studio: 'Sopralluoghi condivisi: in arrivo.', mem: 'Lo spazio sul server è in arrivo.' };
+const LIC_SOON_TXT = { pro: 'Con l\'accesso al tuo account SopraLux i sopralluoghi si salvano anche sul server e li ritrovi sugli altri tuoi dispositivi.', studio: 'Sopralluoghi condivisi: in arrivo.', mem: 'Altri pacchetti di memoria in arrivo.' };
 const LIC_URL = { privacy: 'https://dierv.github.io/rilievo-elettrico/privacy.html', terms: 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/', help: 'https://dierv.github.io/rilievo-elettrico/supporto.html' };
 const LIC_LOCK = '<svg class="lki" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 10V7a5 5 0 0 1 10 0v3h1.5A1.5 1.5 0 0 1 20 11.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10H7zm2 0h6V7a3 3 0 0 0-6 0v3z"/></svg>';
 const licEur = v => { const [i, d] = v.toFixed(2).split('.'); return '€' + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d; };
@@ -268,18 +268,20 @@ const Lic = {
     const rows = LIC_UNLOCKS.map(u => { const inc = !this.has(u.pid) && allOwn;
       return `<div class="licr${fu && fu.id === u.id ? ' foc' : ''}" data-row="${u.id}"><div class="g"><b>${esc(u.name)}</b><div class="mut small">${esc(u.desc)}</div></div><div class="licb">${inc ? '<span class="chip ok">✓ Compreso</span>' : this.btn(u)}</div></div>`; }).join('');
     const allRow = `<div class="licr all" data-row="tutti"><div class="g"><b>${esc(LIC_ALL.name)}</b><div class="mut small">${esc(LIC_ALL.desc)}: invece di ${licEur(LIC_UNLOCKS.reduce((a, u) => a + u.price, 0))}</div></div><div class="licb">${!this.has(LIC_ALL.pid) && !base ? '<span class="chip ok">✓ Compreso</span>' : this.btn(LIC_ALL)}</div></div>`;
-    const cards = LIC_PLANS.map((p, i) => {
+    // Nelle build per lo store i piani e la memoria non ancora in vendita non si mostrano (niente «in arrivo» nell'app).
+    const plans = LIC_PLANS.filter(p => this.sellable(LIC_SKUS[licPid(p.id, 'm')])), mems = LIC_MEM.filter(x => this.sellable(x));
+    const cards = plans.map((p, i) => {
       const m = LIC_SKUS[licPid(p.id, 'm')], y = LIC_SKUS[licPid(p.id, 'y')], cur = plan === p.id; const im = this.info(m.pid), iy = this.info(y.pid);
       const trial = p.trial && !cur && ((im && im.trial) || (iy && iy.trial) || (!this.prices && p.trial));
-      const soon = i === 0 ? LIC_SOON_TXT.pro : LIC_SOON_TXT.studio;
+      const soon = i === 0 ? LIC_SOON_TXT.pro : this.sellable(m) && this.channel === 'store' ? '' : LIC_SOON_TXT.studio;
       return `<div class="licc${cur ? ' cur' : ''}${i === 0 && base ? ' hot' : ''}"><div class="row"><h4>${esc(p.name)}</h4>${cur ? '<span class="chip ok" style="flex:none">Il tuo piano</span>' : ''}</div>
         <div class="licp">${esc(this.price(m))}<span class="mut small"> al mese</span></div>
         <ul class="small"><li>${esc(p.users)}</li><li>Archivio sul server: ${p.gb} GB${i ? ' in comune' : ''}</li><li>${i ? 'Tutto quello che c\'è nel Pro' : 'Stanze, simboli e legenda, quadri, controllo e chiusura, computo, esportazioni DXF/CSV/ZIP, AI'}</li><li>Tutti gli sblocchi compresi</li></ul>
-        <div class="mut small">${esc(soon)}</div>
+        ${soon ? `<div class="mut small">${esc(soon)}</div>` : ''}
         ${trial ? `<div class="small" style="margin-top:6px;color:var(--ok)"><b>${trial} giorni di prova gratuita</b>, poi il prezzo del periodo scelto.</div>` : ''}
         <div class="licbb">${this.btn(m, 'Mensile')}${this.btn(y, 'Annuale')}</div><div class="mut small">Annuale: 2 mesi gratis.</div></div>`;
     }).join('');
-    const mem = LIC_MEM.map(x => `<div class="licr" data-row="${x.id}"><div class="g"><b>${esc(x.name)}</b><div class="mut small">al mese, in aggiunta all'archivio del piano</div></div><div class="licb">${base && !this.has(x.pid) ? `<span class="mut small">${esc(this.price(x))}</span>` : this.btn(x)}</div></div>`).join('');
+    const mem = mems.map(x => `<div class="licr" data-row="${x.id}"><div class="g"><b>${esc(x.name)}</b><div class="mut small">al mese, in aggiunta all'archivio del piano</div></div><div class="licb">${base && !this.has(x.pid) ? `<span class="mut small">${esc(this.price(x))}</span>` : this.btn(x)}</div></div>`).join('');
     const note = !st ? '' : this.loading ? '<div class="mut small">Leggo i prezzi dallo store…</div>'
       : this.prices && Object.keys(this.prices).length ? ''
         : `<div class="banner warn">${this.channel === 'prova' ? `Su ${store} questi prodotti non ci sono ancora (o lo store non risponde): gli acquisti veri si accendono quando i prodotti sono attivi nella console dello store.` : `Prezzi di ${store} non disponibili: controlla la connessione e riapri questa schermata.${this.platform() === 'ios' ? ' Se non tornano, premi «Ripristina acquisti» qui sotto: ricollega l\'app all\'App Store.' : ''}`}${this.priceErr ? `<div class="small mut" style="margin-top:4px">Dettaglio: ${esc(this.priceErr)}</div>` : ''}</div>`;
@@ -295,8 +297,8 @@ const Lic = {
       <div class="sech">Abbonamenti <span class="mut small" style="font-weight:400">comprendono tutti gli sblocchi</span></div>
       <div class="licg">${cards}</div>
       <div class="mut small" style="margin-top:8px">Gli abbonamenti si rinnovano da soli, allo stesso prezzo, finché non li disdici dalle impostazioni del tuo account ${store} (almeno 24 ore prima della scadenza). Se l'abbonamento scade i tuoi dati restano leggibili, il backup resta gratis e gli sblocchi comprati restano tuoi.</div>
-      <div class="sech">Memoria in più <span class="mut small" style="font-weight:400">con Pro o Studio</span></div>
-      <div class="licl">${mem}</div><div class="mut small" style="margin-top:4px">${esc(LIC_SOON_TXT.mem)}</div>
+      ${mems.length ? `<div class="sech">Memoria in più <span class="mut small" style="font-weight:400">con Pro o Studio</span></div>
+      <div class="licl">${mem}</div>${mems.length < LIC_MEM.length ? `<div class="mut small" style="margin-top:4px">${esc(LIC_SOON_TXT.mem)}</div>` : ''}` : ''}
       ${st && this.accOk() ? `<div class="small mut" id="licAccLine" style="margin-top:10px">${esc(this.accText())}</div>` : ''}
       <div class="acts" style="justify-content:flex-start">
         ${st ? `<button data-a="restore"${this.busy ? ' disabled' : ''}>${this.busy === 'restore' ? 'Ripristino…' : 'Ripristina acquisti'}</button>` : ''}

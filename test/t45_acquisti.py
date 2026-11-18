@@ -368,7 +368,9 @@ def t_test_mode(br, sv, prova, store_build, png):
     check('build di prova' not in a.pg.inner_text('#hBanner'), 'build per lo store: nessuna scritta «build di prova»')
     a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
     check(a.pg.locator('#licBox [data-sim]').count() == 0 and 'App di prova' not in a.pg.inner_text('#licBox'), 'build per lo store: nessun tasto «Prova»')
-    check(a.pg.locator(f'#licBox [data-buy="{PRE}studio3_mese"]').count() == 0 and a.pg.locator(f'#licBox [data-buy="{PRE}mem50"]').count() == 0 and a.pg.locator(f'#licBox [data-buy="{PRE}pro_mese"]').count() == 1, 'build per lo store: Studio e memoria «In arrivo», Pro e sblocchi in vendita')
+    check(a.pg.locator(f'#licBox [data-buy="{PRE}studio3_mese"]').count() == 0 and a.pg.locator(f'#licBox [data-buy="{PRE}mem50"]').count() == 0 and a.pg.locator(f'#licBox [data-buy="{PRE}pro_mese"]').count() == 1, 'build per lo store: Studio e memoria non in vendita, Pro e sblocchi in vendita')
+    box = a.pg.inner_text('#licBox')
+    check('Studio 3' not in box and 'Memoria in più' not in box and 'in arrivo' not in box.lower(), 'build per lo store: niente piani o memoria «in arrivo» nella schermata')
     a.close_modal(); check(not a.errs, f'nessun errore in console: {a.errs[:3]}'); a.close()
 
 

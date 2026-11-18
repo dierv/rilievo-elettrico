@@ -339,7 +339,7 @@ const FirebaseAccount = {
   contentHtml() {
     const signed = !!this.user;
     return `<div class="row wrap" style="gap:10px"><div style="flex:1;min-width:160px;overflow-wrap:anywhere"><b>${esc(this.label())}</b>${signed && !navigator.onLine ? ' <span class="chip warn">Offline</span>' : ''}</div><div class="row wrap authbs">${this.buttonsHtml()}</div></div>
-      <div class="small" style="margin-top:6px">${signed ? 'Accesso effettuato. ' : 'Con l’account ritrovi i tuoi acquisti su Android, iPad e browser. '}I sopralluoghi restano su questo dispositivo.</div>
+      <div class="small" style="margin-top:6px">${signed ? 'Accesso effettuato. ' : 'Con l’account ritrovi i tuoi acquisti su tutti i tuoi dispositivi. '}I sopralluoghi restano su questo dispositivo.</div>
       ${this.error ? `<div class="small" role="status" style="margin-top:6px;color:var(--bad)">${esc(this.error)}</div>` : ''}`;
   },
 
@@ -372,7 +372,7 @@ const FirebaseAccount = {
     return `<h3>Account SopraLux</h3>
       <div style="overflow-wrap:anywhere"><b>${esc(user.email || user.displayName || '')}</b></div>
       <label class="f">Metodi di accesso</label>${rows}
-      <div class="small mut" style="margin-top:8px">Collega Apple e Google allo stesso account: entri con l’uno o con l’altro su Android, iPad e browser e ritrovi gli stessi acquisti e impianti.</div>
+      <div class="small mut" style="margin-top:8px">Collega Apple e Google allo stesso account: entri con l’uno o con l’altro su tutti i tuoi dispositivi e ritrovi gli stessi acquisti e impianti.</div>
       ${this.error ? `<div class="small" role="status" style="margin-top:8px;color:var(--bad)">${esc(this.error)}</div>` : ''}
       ${this.canDelete() ? `<label class="f">Eliminare l’account</label>
       <div class="small mut">Cancella l’account e i dati salvati online. Gli abbonamenti si disdicono dalle impostazioni dello store.</div>` : ''}
