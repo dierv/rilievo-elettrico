@@ -1,0 +1,24 @@
+# Screenshot per la verifica di Apple su acquisti in-app e abbonamenti (App Store Connect API, stessa chiave della build iOS).
+# Avvio a mano: Actions → «Screenshot verifica acquisti (App Store)» → Run workflow. Carica solo dove manca, salvo «sostituisci».
+name: Screenshot verifica acquisti (App Store)
+on:
+  workflow_dispatch:
+    inputs:
+      sostituisci:
+        description: 'Sostituisci anche gli screenshot già caricati'
+        type: boolean
+        default: false
+jobs:
+  carica:
+    runs-on: ubuntu-latest
+    env:
+      KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      FORCE: ${{ inputs.sostituisci && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Chiave App Store Connect
+        run: mkdir -p ~/private_keys && printf '%s\n' "$KEY_P8" > ~/private_keys/AuthKey_$KEY_ID.p8
+      - name: Carica gli screenshot
+        run: ruby sorgenti/store/asc_screenshot_verifica.rb sorgenti/store/screenshot/ipad13_acquisti_verifica.jpg
