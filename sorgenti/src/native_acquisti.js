@@ -1,7 +1,8 @@
 /* ============ ACQUISTI NEGLI STORE (Google Play e App Store) ============ */
 // Plugin @capgo/native-purchases (Play Billing su Android, StoreKit 2 su iPad). Questo file si carica solo nell'app nativa.
 // Dà a Lic (01b_lic.js): prezzi dei prodotti, acquisto, ripristino, elenco di quello che è posseduto su questo dispositivo
-// e, sull'iPad, le transazioni firmate da Apple (JWS) che il server verifica per legarle all'account SopraLux.
+// e gli estremi degli acquisti che il server verifica per legarli all'account SopraLux: sull'iPad le transazioni
+// firmate da Apple (JWS), su Android i token di Google Play (il server chiede lo stato a Google).
 const LicStore = (() => {
   let plugin; // undefined = non ancora cercato; null = non c'è
   const cap = () => window.Capacitor;
@@ -57,10 +58,11 @@ const LicStore = (() => {
       return out;
     },
     // Prodotti posseduti adesso su questo dispositivo (sblocchi e abbonamenti attivi).
-    // Sull'iPad restano in jws le transazioni firmate da Apple, da mandare al server (Lic.syncAccount).
-    jws: [],
+    // Restano da mandare al server (Lic.syncAccount): in jws le transazioni firmate da Apple (iPad),
+    // in google i token degli acquisti di Google Play { token, pid, tipo } (Android).
+    jws: [], google: [],
     async owned() {
-      const p = plug(), ios = platform() === 'ios', ids = [], jws = [];
+      const p = plug(), ios = platform() === 'ios', ids = [], jws = [], google = [];
       const r = await p.getPurchases(ios ? { onlyCurrentEntitlements: true } : {});
       for (const t of (r && r.purchases) || []) {
         if (!t || !t.productIdentifier) continue;
@@ -68,14 +70,17 @@ const LicStore = (() => {
         if (t.revocationDate || t.isActive === false || t.subscriptionState === 'expired' || t.subscriptionState === 'revoked') continue;
         if (!ids.includes(t.productIdentifier)) ids.push(t.productIdentifier);
         if (ios && typeof t.jwsRepresentation === 'string' && t.jwsRepresentation) jws.push(t.jwsRepresentation);
+        if (!ios && typeof t.purchaseToken === 'string' && t.purchaseToken && !google.some(g => g.token === t.purchaseToken))
+          google.push({ token: t.purchaseToken, pid: t.productIdentifier, tipo: t.productType === 'subs' ? 'subs' : 'inapp' });
       }
-      this.jws = jws;
+      this.jws = jws; this.google = google;
       return ids;
     },
-    // gettone: appAccountToken (UUID dell'account SopraLux), solo iPad: Apple lo scrive nella transazione firmata
+    // gettone: UUID dell'account SopraLux. Apple lo scrive nella transazione firmata (appAccountToken),
+    // Google Play nell'acquisto (obfuscatedAccountId): così il server sa da quale account è stato comprato.
     async buy(sku, info, gettone) {
       const p = plug(), o = { productIdentifier: sku.pid, productType: sku.kind, quantity: 1 };
-      if (gettone && platform() === 'ios') o.appAccountToken = gettone;
+      if (gettone) o.appAccountToken = gettone;
       if (platform() === 'android' && sku.kind === 'subs') {
         // i gettoni delle offerte scadono: si rileggono subito prima dell'acquisto
         let i = info; try { i = (await this.products([sku]))[sku.pid] || info; } catch (e) { }

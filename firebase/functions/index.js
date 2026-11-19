@@ -10,6 +10,10 @@
 // verificaAcquisti: l'app manda le transazioni firmate dallo store; il server le controlla, le lega
 // all'account e risponde con i prodotti attivi dell'account (acquisti.js).
 // notificheApple: App Store Server Notifications V2 (rinnovi, scadenze, rimborsi), indirizzo impostato in App Store Connect.
+// notificheGoogle: notifiche in tempo reale di Google Play (argomento Pub/Sub «play-notifiche», impostato nella Play Console).
+// Google Play: le funzioni chiedono lo stato degli acquisti all'API Android Publisher con l'account di servizio
+// predefinito delle funzioni (sopralux-64b29@appspot.gserviceaccount.com), che va invitato nella Play Console
+// con i permessi «Visualizzare dati finanziari» e «Gestire ordini e abbonamenti». Nessuna chiave.
 // contaSpazio: somma lo spazio occupato da ogni account in Storage (spazio.js); il limite lo scrive verificaAcquisti.
 // Pubblicazione: firebase deploy --only functions   (dalla cartella principale del repo)
 const functions = require('firebase-functions/v1');
@@ -25,6 +29,21 @@ const adesso = () => FieldValue.serverTimestamp();
 const emailDi = async uid => { try { const u = await getAuth().getUser(uid); return u.emailVerified ? u.email : null; } catch (e) { return null; } };
 const esiste = async uid => { try { await getAuth().getUser(uid); return true; } catch (e) { if (e && e.code === 'auth/user-not-found') return false; throw e; } };
 const regione = functions.region('europe-west1');
+
+// API Android Publisher con il gettone dell'account di servizio della funzione (server dei metadati, ambito androidpublisher)
+let gettoneGoogle = { valore: '', scade: 0 };
+async function chiediGoogle(percorso) {
+  if (Date.now() > gettoneGoogle.scade - 60e3) {
+    const r = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=' + encodeURIComponent('https://www.googleapis.com/auth/androidpublisher'), { headers: { 'Metadata-Flavor': 'Google' } });
+    if (!r.ok) throw new Error('gettone per Google Play non ottenuto: ' + r.status);
+    const j = await r.json(); gettoneGoogle = { valore: j.access_token, scade: Date.now() + (Number(j.expires_in) || 300) * 1000 };
+  }
+  const r = await fetch(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${acquisti.PACCHETTO}/${percorso}`, { headers: { Authorization: 'Bearer ' + gettoneGoogle.valore } });
+  if (r.ok) return r.json();
+  const testo = (await r.text()).slice(0, 300), e = new Error(`Google Play ${r.status}: ${testo}`);
+  if (r.status === 404 || r.status === 410 || (r.status === 400 && /invalid|not.?found/i.test(testo))) e.nonTrovato = true;
+  throw e;
+}
 
 exports.eliminaDatiAccount = regione
   .runWith({ timeoutSeconds: 540, memory: '512MB' })
@@ -46,7 +65,7 @@ exports.verificaAcquisti = regione
     const uid = context.auth && context.auth.uid;
     if (!uid) throw new functions.https.HttpsError('unauthenticated', 'Entra nel tuo account SopraLux.');
     const t = context.auth.token || {}, email = t.email_verified ? t.email : null; // per lo Studio a vita (regali/<email>)
-    return acquisti.verificaDaApp(getFirestore(), uid, data, { esiste, adesso, email, log: (m, x) => functions.logger.warn(m, x) });
+    return acquisti.verificaDaApp(getFirestore(), uid, data, { esiste, adesso, email, chiediGoogle, log: (m, x) => functions.logger.warn(m, x) });
   });
 
 exports.notificheApple = regione
@@ -61,6 +80,20 @@ exports.notificheApple = regione
       if (!e.rifiutato) { functions.logger.error('Notifica Apple non elaborata', e); res.status(500).send('errore'); return; } // Apple riprova
       functions.logger.warn('Notifica Apple scartata', { motivo: e.message });
       res.status(400).send('non valida');
+    }
+  });
+
+exports.notificheGoogle = regione
+  .runWith({ timeoutSeconds: 60, memory: '256MB' })
+  .pubsub.topic('play-notifiche')
+  .onPublish(async msg => {
+    let m; try { m = msg.json; } catch (e) { functions.logger.warn('Notifica Google illeggibile'); return; }
+    try {
+      const tipo = await acquisti.notificaGoogle(getFirestore(), m, { adesso, emailDi, chiediGoogle });
+      functions.logger.info('Notifica Google Play', { tipo });
+    } catch (e) {
+      if (e.rifiutato) { functions.logger.warn('Notifica Google Play scartata', { motivo: e.message }); return; }
+      functions.logger.error('Notifica Google Play non elaborata', e); // l'app riverifica gli acquisti a ogni avvio
     }
   });
 

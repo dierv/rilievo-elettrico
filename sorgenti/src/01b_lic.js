@@ -48,7 +48,7 @@ const LIC_LOCK = '<svg class="lki" viewBox="0 0 24 24" aria-hidden="true"><path 
 const licEur = v => { const [i, d] = v.toFixed(2).split('.'); return '€' + i.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + d; };
 const LIC_FN = 'https://europe-west1-sopralux-64b29.cloudfunctions.net/verificaAcquisti'; // funzione «callable» di Firebase, chiamata senza SDK
 const licUser = () => { try { return (typeof FirebaseAccount !== 'undefined' && FirebaseAccount.auth && FirebaseAccount.auth.currentUser) || null; } catch (e) { return null; } };
-async function licGettone(uid) { // appAccountToken di Apple: UUID ricavato dall'uid, stessa formula del server (gettoneAccount in acquisti.js)
+async function licGettone(uid) { // gettone dell'account negli acquisti (Apple: appAccountToken; Google: obfuscatedAccountId): UUID ricavato dall'uid, stessa formula del server (gettoneAccount in acquisti.js)
   try {
     const b = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('sopralux:' + uid)));
     const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -128,7 +128,7 @@ const Lic = {
       return true;
     } catch (e) { console.warn('acquisti: lettura non riuscita', e); this.syncAccount(force); return false; }
   },
-  // Account SopraLux: manda al server le transazioni firmate (iPad) e riceve i prodotti attivi dell'account.
+  // Account SopraLux: manda al server le transazioni firmate (iPad) o i token di Google Play (Android) e riceve i prodotti attivi dell'account.
   // Si ripete solo se cambiano account o transazioni, oppure dopo 10 minuti (force: subito, per esempio dopo un acquisto).
   async syncAccount(force = false) {
     if (!this.on) return;
@@ -137,18 +137,19 @@ const Lic = {
       if (this.acc && typeof FirebaseAccount !== 'undefined' && FirebaseAccount.ready) { const had = Object.keys(this.acc.prodotti).length; this.acc = null; this.accKey = ''; UIP.set('licAcc', null); if (had) this.changed(); }
       return;
     }
-    const st = this.api(), apple = st && st.platform() === 'ios' ? (st.jws || []).slice() : [];
-    const key = u.uid + '|' + apple.join('|');
+    const st = this.api(), ios = st && st.platform() === 'ios';
+    const apple = ios ? (st.jws || []).slice() : [], google = st && !ios ? (st.google || []).slice() : [];
+    const key = u.uid + '|' + apple.join('|') + '|' + google.map(g => g.token).join('|');
     if (this.accBusy) { if (force || key !== this.accBusyKey) this.accAgain = true; return this.accP; } // già in corso: si aspetta quella (e, se serve, si ripete dopo)
     if (!navigator.onLine) return;
     if (!force && key === this.accKey && Date.now() - this.accAt < 10 * 60000) return;
     this.accBusy = true; this.accBusyKey = key;
-    return (this.accP = this.askAccount(u, apple, key));
+    return (this.accP = this.askAccount(u, { apple, google }, key));
   },
-  async askAccount(u, apple, key) {
+  async askAccount(u, dati, key) {
     try {
       const token = await u.getIdToken();
-      const r = await fetch(LIC_FN, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data: { apple } }) });
+      const r = await fetch(LIC_FN, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ data: dati }) });
       let j = null; try { j = await r.json(); } catch (e) { }
       if (!r.ok || !j || !j.result) throw new Error((j && j.error && j.error.message) || 'risposta ' + r.status);
       const cur = licUser(); if (!cur || cur.uid !== u.uid) return; // nel frattempo è cambiato account
@@ -210,7 +211,7 @@ const Lic = {
     }
     this.busy = pid; this.render();
     try {
-      const u = licUser(), gettone = u && this.platform() === 'ios' ? await licGettone(u.uid) : null;
+      const u = licUser(), gettone = u ? await licGettone(u.uid) : null;
       await st.buy(sku, this.info(pid), gettone);
       await this.refresh(true);
       toast(this.has(pid) ? `Acquisto completato: «${sku.name}» è attivo.` : 'Acquisto registrato: si attiva appena lo store lo conferma.', false, 6000);

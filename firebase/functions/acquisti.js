@@ -9,8 +9,13 @@
 // per le ricevute e che la firma sia giusta. Così non servono chiavi né chiamate ad Apple.
 // Le notifiche di Apple (App Store Server Notifications V2: rinnovi, scadenze, rimborsi) usano lo stesso formato.
 //
+// Google Play: l'app manda il token di ogni acquisto (purchaseToken); il server chiede lo stato a Google con
+// l'API Android Publisher (con l'identità della funzione, che va aggiunta come utente nella Play Console).
+// Le notifiche in tempo reale di Google Play (RTDN, via Pub/Sub) aggiornano rinnovi, disdette e rimborsi.
+//
 // Firestore (solo il server scrive; le regole negano tutto ai dispositivi):
 //   acquistiStore/apple_<originalTransactionId>: { uid, store, pid, otid, tid, env, acquisto, scadenza, revocato, firmato, gettone, aggiornato }
+//   acquistiStore/google_<sha256 del token, 40 caratteri>: stessi campi (tid = numero d'ordine GPA., firmato = ora della verifica)
 // Un acquisto appartiene a un solo account: al primo che lo registra. Passa a un altro account solo se è
 // stato comprato da quell'account (gettone dell'account, appAccountToken) o se il primo account non esiste più.
 const crypto = require('crypto');
@@ -75,6 +80,40 @@ function gettoneAccount(uid) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
+// ---- Google Play ----
+const PACCHETTO = 'it.diervsoft.sopralux';
+// Stati in cui l'abbonamento dà ancora accesso (CANCELED: disdetto, vale fino alla scadenza già pagata)
+const GOOGLE_ATTIVI = new Set(['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED']);
+const idGoogle = token => crypto.createHash('sha256').update(token).digest('hex').slice(0, 40);
+const tokenOk = t => typeof t === 'string' && t.length >= 20 && t.length <= 1000 && /^[A-Za-z0-9._:-]+$/.test(t);
+
+// Acquisto di Google Play -> record da salvare. a: { token, pid, tipo: 'inapp' | 'subs' }.
+// chiedi(percorso) -> JSON dell'API Android Publisher (applications/<pacchetto>/<percorso>); un errore con nonTrovato = token sconosciuto.
+async function transazioneGoogle(chiedi, a, ora) {
+  if (!a || !tokenOk(a.token)) throw new Rifiutato('token Google non valido');
+  const pid = String(a.pid || ''); if (!PRODOTTI.has(pid)) throw new Rifiutato('prodotto sconosciuto');
+  const otid = idGoogle(a.token), base = { store: 'google', pid, otid, firmato: ora };
+  const gettone = x => (typeof x === 'string' && x ? x.toLowerCase() : null);
+  let r;
+  try { r = await chiedi(a.tipo === 'subs' ? `purchases/subscriptionsv2/tokens/${encodeURIComponent(a.token)}` : `purchases/products/${encodeURIComponent(pid)}/tokens/${encodeURIComponent(a.token)}`); }
+  catch (e) { if (e && e.nonTrovato) throw new Rifiutato('acquisto sconosciuto a Google'); throw e; }
+  if (a.tipo === 'subs') {
+    const riga = (r.lineItems || []).find(x => x && x.productId === pid); if (!riga) throw new Rifiutato('abbonamento diverso');
+    if (r.subscriptionState === 'SUBSCRIPTION_STATE_PENDING') throw new Rifiutato('pagamento in attesa');
+    const scad = Date.parse(riga.expiryTime) || null, attivo = GOOGLE_ATTIVI.has(r.subscriptionState);
+    return Object.assign(base, {
+      tid: r.latestOrderId || otid, env: r.testPurchase ? 'Sandbox' : 'Production', acquisto: Date.parse(r.startTime) || null,
+      scadenza: attivo ? scad : Math.min(scad || ora, ora), revocato: false, stato: r.subscriptionState || '',
+      gettone: gettone(r.externalAccountIdentifiers && r.externalAccountIdentifiers.obfuscatedExternalAccountId),
+    });
+  }
+  if (r.purchaseState === 2) throw new Rifiutato('pagamento in attesa');
+  return Object.assign(base, {
+    tid: r.orderId || otid, env: r.purchaseType === 0 ? 'Sandbox' : 'Production', acquisto: Number(r.purchaseTimeMillis) || null,
+    scadenza: null, revocato: r.purchaseState === 1, gettone: gettone(r.obfuscatedExternalAccountId),
+  });
+}
+
 const chiave = r => r.store + '_' + r.otid;
 
 // Registra un acquisto sull'account uid. Risultato: 'tuo' oppure 'altro' (appartiene a un altro account esistente).
@@ -136,25 +175,35 @@ async function staccaAccount(db, uid, adesso) {
   return n;
 }
 
-// Chiamata dall'app: { apple: [JWS delle transazioni attive su questo iPad] }
+// Chiamata dall'app: { apple: [JWS delle transazioni attive su questo iPad], google: [{ token, pid, tipo }] (Android) }
+// opz.chiediGoogle: API Android Publisher (vedi transazioneGoogle); opz.ora: millisecondi adesso (prove).
 async function verificaDaApp(db, uid, data, opz) {
-  const { esiste, adesso, radice, log, email } = opz;
+  const { esiste, adesso, radice, log, email, chiediGoogle } = opz, ora = opz.ora || Date.now();
   const jws = Array.isArray(data && data.apple) ? data.apple.filter(x => typeof x === 'string').slice(0, 60) : [];
-  let registrati = 0, altroAccount = 0, scartati = 0;
+  const gp = Array.isArray(data && data.google) ? data.google.filter(x => x && typeof x === 'object').slice(0, 60) : [];
+  let registrati = 0, altroAccount = 0, scartati = 0, nonVerificati = 0;
+  const conta = e => { if (e === 'altro') altroAccount++; else registrati++; };
   for (const j of jws) {
-    try {
-      const r = transazioneApple(verificaJws(j, radice));
-      const e = await registra(db, uid, r, esiste, adesso);
-      if (e === 'altro') altroAccount++; else registrati++;
-    } catch (e) {
+    try { conta(await registra(db, uid, transazioneApple(verificaJws(j, radice)), esiste, adesso)); }
+    catch (e) {
       if (!e.rifiutato) throw e;
       scartati++; if (log) log('transazione Apple scartata', { uid, motivo: e.message });
     }
   }
-  const prodotti = await conRegalo(db, await licenza(db, uid), email);
+  for (const g of gp) {
+    try {
+      if (!chiediGoogle) throw new Error('verifica di Google Play non configurata');
+      conta(await registra(db, uid, await transazioneGoogle(chiediGoogle, g, ora), esiste, adesso));
+    } catch (e) {
+      if (e.rifiutato) { scartati++; if (log) log('acquisto Google scartato', { uid, motivo: e.message }); continue; }
+      // Google non risponde o la Play Console non ha ancora dato il permesso: restano valide le registrazioni già fatte
+      nonVerificati++; if (log) log('acquisto Google non verificato', { uid, motivo: (e && e.message) || String(e) });
+    }
+  }
+  const prodotti = await conRegalo(db, await licenza(db, uid, ora), email);
   await spazio.scriviLimite(db, uid, prodotti, adesso); // il limite dello spazio sul server segue il piano
   const sp = await spazio.leggi(db, uid);
-  return { prodotti, registrati, altroAccount, scartati, spazio: { usati: sp.usati, limite: sp.limite } };
+  return { prodotti, registrati, altroAccount, scartati, nonVerificati, spazio: { usati: sp.usati, limite: sp.limite } };
 }
 
 // Notifica di Apple (corpo { signedPayload }). Risultato: tipo della notifica.
@@ -170,4 +219,29 @@ async function notificaApple(db, corpo, opz) {
   return n.notificationType || '?';
 }
 
-module.exports = { BUNDLE, PRODOTTI, REGALO, conRegalo, APPLE_ROOT_G3, Rifiutato, verificaJws, transazioneApple, gettoneAccount, registra, aggiorna, licenza, staccaAccount, verificaDaApp, notificaApple, oidDer };
+// Notifica in tempo reale di Google Play (messaggio Pub/Sub già decodificato). Risultato: descrizione breve.
+// Abbonamento o acquisto singolo: si rilegge lo stato da Google. Rimborso o annullamento (voided): acquisto revocato.
+async function notificaGoogle(db, m, opz) {
+  const { adesso, emailDi, chiediGoogle } = opz, ora = opz.ora || Date.now();
+  if (!m || typeof m !== 'object') throw new Rifiutato('notifica illeggibile');
+  if (m.packageName !== PACCHETTO) throw new Rifiutato('notifica di un\'altra app');
+  if (m.testNotification) return 'prova';
+  let uid = null, tipo;
+  if (m.subscriptionNotification || m.oneTimeProductNotification) {
+    const n = m.subscriptionNotification || m.oneTimeProductNotification, subs = !!m.subscriptionNotification;
+    const r = await transazioneGoogle(chiediGoogle, { token: n.purchaseToken, pid: subs ? n.subscriptionId : n.sku, tipo: subs ? 'subs' : 'inapp' }, ora);
+    uid = await aggiorna(db, r, adesso); tipo = (subs ? 'abbonamento ' : 'acquisto ') + n.notificationType;
+  } else if (m.voidedPurchaseNotification) {
+    const v = m.voidedPurchaseNotification; if (!tokenOk(v.purchaseToken)) throw new Rifiutato('token Google non valido');
+    const ref = db.collection('acquistiStore').doc('google_' + idGoogle(v.purchaseToken));
+    uid = await db.runTransaction(async tx => {
+      const s = await tx.get(ref); if (!s.exists) return null;
+      tx.set(ref, { revocato: true, firmato: ora, aggiornato: adesso() }, { merge: true }); return s.data().uid || null;
+    });
+    tipo = 'annullato';
+  } else throw new Rifiutato('notifica sconosciuta');
+  if (uid) await spazio.scriviLimite(db, uid, await conRegalo(db, await licenza(db, uid, ora), emailDi ? await emailDi(uid) : null), adesso);
+  return tipo;
+}
+
+module.exports = { BUNDLE, PACCHETTO, PRODOTTI, transazioneGoogle, notificaGoogle, idGoogle, REGALO, conRegalo, APPLE_ROOT_G3, Rifiutato, verificaJws, transazioneApple, gettoneAccount, registra, aggiorna, licenza, staccaAccount, verificaDaApp, notificaApple, oidDer };

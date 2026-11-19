@@ -215,4 +215,101 @@ test('Studio a vita: regali/<email> vale nell\'app e resta dopo le notifiche', a
   assert.equal((await SP.leggi(db, 'anna')).limite, 300 * SP.GB);
 });
 
+/* ---- Google Play: API Android Publisher simulata ---- */
+const T_UNO = 'tokUno' + 'a'.repeat(40), T_SUB = 'tokSub' + 'b'.repeat(40), T_ATTESA = 'tokAtt' + 'c'.repeat(40);
+function play(stati) { // stati: { token: risposta dell'API } ; chiamate: percorsi chiesti
+  const f = async percorso => {
+    f.chiamate.push(percorso);
+    const tok = decodeURIComponent(percorso.split('/tokens/')[1] || '');
+    if (f.giu) throw new Error('Google Play 503: non disponibile');
+    if (!(tok in stati)) { const e = new Error('Google Play 404'); e.nonTrovato = true; throw e; }
+    return JSON.parse(JSON.stringify(stati[tok]));
+  };
+  f.chiamate = []; return f;
+}
+const ORA = 1_800_000_000_000;
+const uno = (o = {}) => Object.assign({ purchaseState: 0, purchaseType: 0, orderId: 'GPA.1111-2222-3333-44444', purchaseTimeMillis: String(ORA - 3600e3), obfuscatedExternalAccountId: A.gettoneAccount('anna').toUpperCase() }, o);
+const sub = (o = {}) => Object.assign({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', latestOrderId: 'GPA.5555-6666-7777-88888', startTime: new Date(ORA - 864e5).toISOString(),
+  testPurchase: {}, lineItems: [{ productId: 'sopralux_pro_mese', expiryTime: new Date(ORA + 30 * 864e5).toISOString() }], externalAccountIdentifiers: { obfuscatedExternalAccountId: A.gettoneAccount('anna') } }, o);
+const opzG = (g, extra = {}) => Object.assign(opz(), { chiediGoogle: g, ora: ORA }, extra);
+
+test('Google Play: sblocco e abbonamento verificati con Google e legati all\'account', async () => {
+  const db = memoria(), g = play({ [T_UNO]: uno(), [T_SUB]: sub() });
+  const r = await A.verificaDaApp(db, 'anna', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }, { token: T_SUB, pid: 'sopralux_pro_mese', tipo: 'subs' }] }, opzG(g));
+  assert.equal(r.registrati, 2); assert.equal(r.scartati, 0);
+  assert.deepEqual(r.prodotti.sopralux_dxf, { scade: null, store: 'google', prova: true });
+  assert.equal(r.prodotti.sopralux_pro_mese.scade, ORA + 30 * 864e5);
+  assert.equal(r.spazio.limite, 25 * SP.GB);
+  assert.deepEqual(g.chiamate, [`purchases/products/sopralux_dxf/tokens/${T_UNO}`, `purchases/subscriptionsv2/tokens/${T_SUB}`]);
+  const d = db.docs.get('acquistiStore/google_' + A.idGoogle(T_UNO));
+  assert.equal(d.uid, 'anna'); assert.equal(d.tid, 'GPA.1111-2222-3333-44444'); assert.equal(d.gettone, A.gettoneAccount('anna'));
+  assert.ok(!JSON.stringify([...db.docs.values()]).includes(T_UNO), 'il token non si salva');
+});
+
+test('Google Play: token sconosciuti, prodotti sbagliati, pagamenti in attesa e rimborsi', async () => {
+  const db = memoria(), g = play({ [T_UNO]: uno({ purchaseState: 1 }), [T_ATTESA]: uno({ purchaseState: 2 }), [T_SUB]: sub() });
+  const r = await A.verificaDaApp(db, 'anna', { google: [
+    { token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }, // rimborsato
+    { token: T_ATTESA, pid: 'sopralux_foto', tipo: 'inapp' }, // in attesa
+    { token: 'sconosciuto' + 'x'.repeat(30), pid: 'sopralux_misura', tipo: 'inapp' },
+    { token: T_SUB, pid: 'sopralux_pro_anno', tipo: 'subs' }, // il token è di un altro abbonamento
+    { token: T_SUB, pid: 'altro_prodotto', tipo: 'subs' },
+    { token: 'corto', pid: 'sopralux_dxf', tipo: 'inapp' }, { token: 'a/b' + 'x'.repeat(30), pid: 'sopralux_dxf', tipo: 'inapp' }, 'nonoggetto',
+  ] }, opzG(g));
+  assert.deepEqual(r.prodotti, {});
+  assert.equal(r.registrati, 1, 'il rimborsato si registra (revocato) ma non dà nulla'); assert.equal(r.scartati, 6);
+  assert.equal(db.docs.get('acquistiStore/google_' + A.idGoogle(T_UNO)).revocato, true);
+});
+
+test('Google Play: abbonamento disdetto vale fino alla scadenza, scaduto o sospeso no', async () => {
+  const fino = ORA + 5 * 864e5;
+  for (const [stato, attivo] of [['SUBSCRIPTION_STATE_CANCELED', true], ['SUBSCRIPTION_STATE_IN_GRACE_PERIOD', true], ['SUBSCRIPTION_STATE_ON_HOLD', false], ['SUBSCRIPTION_STATE_EXPIRED', false], ['SUBSCRIPTION_STATE_PAUSED', false]]) {
+    const db = memoria(), g = play({ [T_SUB]: sub({ subscriptionState: stato, lineItems: [{ productId: 'sopralux_pro_mese', expiryTime: new Date(fino).toISOString() }] }) });
+    const r = await A.verificaDaApp(db, 'anna', { google: [{ token: T_SUB, pid: 'sopralux_pro_mese', tipo: 'subs' }] }, opzG(g));
+    assert.equal(!!r.prodotti.sopralux_pro_mese, attivo, stato);
+  }
+});
+
+test('Google Play: acquisto di un altro account, passaggio col gettone, Google non raggiungibile', async () => {
+  const db = memoria(), g = play({ [T_UNO]: uno({ obfuscatedExternalAccountId: '' }) });
+  await A.verificaDaApp(db, 'anna', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, opzG(g));
+  let r = await A.verificaDaApp(db, 'bruno', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, opzG(g));
+  assert.equal(r.altroAccount, 1); assert.deepEqual(r.prodotti, {});
+  // comprato da bruno (gettone di bruno nell'acquisto): passa a bruno
+  const g2 = play({ [T_UNO]: uno({ obfuscatedExternalAccountId: A.gettoneAccount('bruno') }) });
+  r = await A.verificaDaApp(db, 'bruno', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, opzG(g2));
+  assert.ok(r.prodotti.sopralux_dxf);
+  // Google giù o permessi mancanti: niente errore, restano le registrazioni già fatte
+  g2.giu = true;
+  r = await A.verificaDaApp(db, 'bruno', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, opzG(g2));
+  assert.equal(r.nonVerificati, 1); assert.ok(r.prodotti.sopralux_dxf);
+  r = await A.verificaDaApp(db, 'bruno', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, opz()); // funzione senza Google
+  assert.equal(r.nonVerificati, 1); assert.ok(r.prodotti.sopralux_dxf);
+});
+
+test('notifiche di Google Play: rinnovo, disdetta, scadenza e rimborso aggiornano l\'account', async () => {
+  const db = memoria(), stati = { [T_SUB]: sub() }, g = play(stati), o = opzG(g, { emailDi: async () => null });
+  await A.verificaDaApp(db, 'anna', { google: [{ token: T_SUB, pid: 'sopralux_pro_mese', tipo: 'subs' }] }, o);
+  assert.equal((await SP.leggi(db, 'anna')).limite, 25 * SP.GB);
+  const msg = (n, x = {}) => Object.assign({ version: '1.0', packageName: A.PACCHETTO, eventTimeMillis: String(ORA) }, n, x);
+  stati[T_SUB] = sub({ subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED', lineItems: [{ productId: 'sopralux_pro_mese', expiryTime: new Date(ORA - 1000).toISOString() }] });
+  assert.equal(await A.notificaGoogle(db, msg({ subscriptionNotification: { version: '1.0', notificationType: 13, purchaseToken: T_SUB, subscriptionId: 'sopralux_pro_mese' } }), o), 'abbonamento 13');
+  assert.equal((await SP.leggi(db, 'anna')).limite, 0, 'scaduto: niente spazio');
+  assert.equal(db.docs.get('acquistiStore/google_' + A.idGoogle(T_SUB)).uid, 'anna', 'l\'account non cambia');
+  stati[T_SUB] = sub(); // rinnovato
+  await A.notificaGoogle(db, msg({ subscriptionNotification: { notificationType: 2, purchaseToken: T_SUB, subscriptionId: 'sopralux_pro_mese' } }), o);
+  assert.equal((await SP.leggi(db, 'anna')).limite, 25 * SP.GB);
+  assert.equal(await A.notificaGoogle(db, msg({ voidedPurchaseNotification: { purchaseToken: T_SUB, orderId: 'GPA.x', productType: 1, refundType: 1 } }), o), 'annullato');
+  assert.equal((await SP.leggi(db, 'anna')).limite, 0, 'rimborsato: niente spazio');
+  assert.equal(await A.notificaGoogle(db, msg({ testNotification: { version: '1.0' } }), o), 'prova');
+  await assert.rejects(A.notificaGoogle(db, msg({}, { packageName: 'altro.pacchetto' }), o), /altra app/);
+  await assert.rejects(A.notificaGoogle(db, msg({}), o), /sconosciuta/);
+  // acquisto mai registrato dall'app: si salva senza account, l'app lo registrerà
+  stati[T_UNO] = uno();
+  await A.notificaGoogle(db, msg({ oneTimeProductNotification: { notificationType: 1, purchaseToken: T_UNO, sku: 'sopralux_dxf' } }), o);
+  assert.equal(db.docs.get('acquistiStore/google_' + A.idGoogle(T_UNO)).uid, null);
+  const r = await A.verificaDaApp(db, 'anna', { google: [{ token: T_UNO, pid: 'sopralux_dxf', tipo: 'inapp' }] }, o);
+  assert.ok(r.prodotti.sopralux_dxf);
+});
+
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));

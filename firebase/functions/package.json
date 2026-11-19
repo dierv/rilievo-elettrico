@@ -1,7 +1,7 @@
 {
   "name": "sopralux-functions",
   "private": true,
-  "description": "Funzioni server di SopraLux: pulizia dei dati di un account eliminato, verifica degli acquisti negli store e notifiche di Apple",
+  "description": "Funzioni server di SopraLux: pulizia dei dati di un account eliminato, verifica degli acquisti negli store (Apple e Google Play), notifiche degli store e spazio sul server",
   "main": "index.js",
   "scripts": {
     "test": "node --test --test-reporter=tap prove/acquisti.test.js"

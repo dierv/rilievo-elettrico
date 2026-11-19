@@ -508,7 +508,7 @@ def t_account(br, sv, prova, png):
     check(not fn.calls and not a.js("Lic.can('misura')"), 'senza accesso all\'account nessuna chiamata al server')
     login(a, 'anna'); fn.wait(a, 1); a.pg.wait_for_function("Lic.can('misura')", timeout=5000)
     c = fn.calls[-1] if fn.calls else {}
-    check(c.get('auth') == 'Bearer tok-anna' and c.get('data') == {'apple': ['jws.' + PRE + 'dxf']}, f'iPad: al server vanno il gettone dell\'account e le transazioni firmate da Apple: {c}')
+    check(c.get('auth') == 'Bearer tok-anna' and c.get('data') == {'apple': ['jws.' + PRE + 'dxf'], 'google': []}, f'iPad: al server vanno il gettone dell\'account e le transazioni firmate da Apple: {c}')
     check(a.js("Lic.can('dxf') && Lic.can('misura') && !Lic.can('foto')"), 'iPad: lo sblocco comprato sull\'altro dispositivo vale anche qui')
     check(a.js("JSON.parse(localStorage.getItem('ril_ui_licAcc')).uid") == 'anna', 'la risposta del server resta sul dispositivo (anche senza rete)')
     a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
@@ -529,7 +529,7 @@ def t_account(br, sv, prova, png):
     fn = FakeFn(a, {'prodotti': {PRE + 'pro_mese': {'scade': fut, 'store': 'apple', 'prova': True}}, 'altroAccount': 0})
     check(a.js("Lic.plan() === 'pro'"), 'all\'avvio vale l\'ultimo stato dell\'account, prima che il server risponda')
     login(a, 'bruno'); fn.wait(a, 1); a.pg.wait_for_timeout(200)
-    check(fn.calls and fn.calls[-1]['data'] == {'apple': []} and a.js("Lic.plan() === 'pro' && Lic.can('stanze')"), f'Android: il Pro comprato su iPad vale anche qui ({fn.calls[-1]["data"] if fn.calls else None})')
+    check(fn.calls and fn.calls[-1]['data'] == {'apple': [], 'google': []} and a.js("Lic.plan() === 'pro' && Lic.can('stanze')"), f'Android: il Pro comprato su iPad vale anche qui ({fn.calls[-1]["data"] if fn.calls else None})')
     a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
     a.pg.click(f'#licBox [data-buy="{PRE}pro_anno"]'); a.pg.wait_for_timeout(300)
     check('già l\'abbonamento Pro' in a.pg.inner_text('#modal'), 'comprare un secondo abbonamento: prima un avviso')
@@ -539,6 +539,17 @@ def t_account(br, sv, prova, png):
     fn.answer = {'prodotti': {}, 'altroAccount': 0}; login(a, 'carla'); fn.wait(a, 2); a.pg.wait_for_timeout(200)
     check(a.js("Lic.plan() === 'base'"), 'cambio di account: gli acquisti del vecchio account non valgono più')
     check(not a.errs, f'nessun errore in console: {a.errs[:3]}'); a.close()
+    # Android: i token di Google Play vanno al server, l'acquisto porta il gettone dell'account
+    a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': owned('android', 'dxf', 'mem50')})
+    fn = FakeFn(a, {'prodotti': {}, 'altroAccount': 0})
+    login(a, 'dario'); fn.wait(a, 1); a.pg.wait_for_timeout(200)
+    g = fn.calls[-1]['data'].get('google') if fn.calls else None
+    check(g == [{'token': 'tok0', 'pid': PRE + 'dxf', 'tipo': 'inapp'}, {'token': 'tok1', 'pid': PRE + 'mem50', 'tipo': 'subs'}] and fn.calls[-1]['data'].get('apple') == [], f'Android: al server vanno i token di Google Play con prodotto e tipo: {g}')
+    a.js("Lic.open()"); a.pg.wait_for_selector('#licBox [data-buy]:not([disabled])')
+    n = len(fn.calls); a.buy('foto'); c = a.last_call('purchaseProduct'); fn.wait(a, n + 1)
+    check(c and c.get('appAccountToken') == gettone('dario'), f'Android: l\'acquisto porta il gettone dell\'account (obfuscatedAccountId): {c and c.get("appAccountToken")}')
+    check(fn.calls and any(x['pid'] == PRE + 'foto' for x in fn.calls[-1]['data'].get('google', [])), 'Android: dopo l\'acquisto il nuovo token va subito al server')
+    a.close_modal(); check(not a.errs, f'nessun errore in console: {a.errs[:3]}'); a.close()
     # abbonamento scaduto nell'ultimo stato noto; server che non risponde
     old = dict(cache, prodotti={PRE + 'pro_mese': {'scade': 1000, 'store': 'apple'}, PRE + 'misura': {'scade': None}})
     a = App(br, sv, prova, 'android', {'products': products('android'), 'owned': []}, storage={'ril_ui_licAcc': old})

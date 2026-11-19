@@ -161,7 +161,23 @@ Nessun tracciamento, nessuna pubblicità, nessuna statistica d'uso o diagnostica
 | Contenuti utente → Dati audio | Note audio nell'archivio sul server (Pro) | Sì |
 | Contenuti utente → Altri contenuti dell'utente | Sopralluoghi, disegni e legenda nell'archivio sul server (Pro) | Sì |
 
-- **Google («Sicurezza dei dati»):** gli stessi dati (Email, Nome, ID utente, Cronologia acquisti, Foto, Registrazioni vocali o audio, Altri contenuti generati dagli utenti), raccolti, non condivisi, facoltativi, per «Funzionalità dell'app» e «Gestione dell'account»; cifrati in transito; l'utente può chiederne l'eliminazione (in app: Account → Elimina account).
+- **Google («Sicurezza dei dati»), risposte da dare nella Play Console:**
+  - Raccolta o condivisione di dati: **Sì**. Cifrati in transito: **Sì**. Account creato nell'app: **Sì** (accesso con Google o Apple, facoltativo).
+  - Link per l'eliminazione dell'account: `https://dierv.github.io/rilievo-elettrico/supporto.html#elimina-account`. Eliminazione di dati senza eliminare l'account: **No**.
+  - Dati **raccolti, non condivisi**, tutti **facoltativi**, trattati in modo **non temporaneo**:
+
+| Categoria Play → tipo | Scopi |
+|---|---|
+| Informazioni personali → Nome | Funzionalità dell'app, Gestione dell'account |
+| Informazioni personali → Indirizzo email | Funzionalità dell'app, Gestione dell'account |
+| Informazioni personali → ID utente | Funzionalità dell'app, Gestione dell'account |
+| Informazioni finanziarie → Cronologia acquisti | Funzionalità dell'app |
+| Foto e video → Foto | Funzionalità dell'app |
+| File audio → Registrazioni vocali o audio | Funzionalità dell'app |
+| Attività nelle app → Altri contenuti generati dagli utenti | Funzionalità dell'app |
+
+  - Non raccolti: posizione, contatti, dati di app e prestazioni (niente statistiche né crash), identificativi del dispositivo, messaggi, salute, navigazione.
+  - La foto mandata al servizio di AI scelto dall'utente, con la sua chiave, è già dichiarata fra le foto raccolte. Non va dichiarata come «condivisione»: rientra nell'eccezione di Google per i trasferimenti avviati dall'utente, che si aspetta che la foto vada a quel servizio.
 - **AI facoltativa:** la foto va direttamente dal dispositivo al servizio scelto dall'utente con la sua chiave; è già coperta da «Foto o video».
 - **Crittografia (Apple):** solo HTTPS di sistema, quindi esente. Nell'app c'è già `ITSAppUsesNonExemptEncryption = false`.
 
